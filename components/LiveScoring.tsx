@@ -223,6 +223,7 @@ export function LiveScoring() {
     (s) => s.submitNextPairSelection
   );
   const undo = useMatchStore((s) => s.undo);
+  const swapStrikerManually = useMatchStore((s) => s.swapStrikerManually);
   const endInningsManually = useMatchStore((s) => s.endInningsManually);
 
   useEffect(() => {
@@ -338,6 +339,20 @@ export function LiveScoring() {
             </option>
           ))}
         </select>
+      </section>
+
+      <section aria-label="Manual striker control">
+        <button
+          type="button"
+          disabled={!canDeliver}
+          onClick={() => swapStrikerManually()}
+          className="h-12 w-full rounded-2xl border border-emerald-500 bg-emerald-50 text-sm font-bold text-emerald-900 active:scale-[0.98] disabled:opacity-40 dark:border-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-100"
+        >
+          Swap striker manually
+        </button>
+        <p className="mt-1 text-center text-xs text-zinc-500">
+          Changes striker only. Does not add runs or a ball.
+        </p>
       </section>
 
       <section aria-label="Scoring">

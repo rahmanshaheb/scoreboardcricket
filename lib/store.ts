@@ -167,6 +167,7 @@ export interface MatchStore {
     extraType: "wide" | "no_ball",
     detail: WicketDetailInput
   ) => void;
+  swapStrikerManually: () => void;
   setCurrentBowler: (playerId: string | null) => void;
   /** After a completed over (6 legal balls); cannot be same bowler as previous over */
   submitNextOverBowler: (bowlerId: string) => string | null;
@@ -470,6 +471,17 @@ export const useMatchStore = create<MatchStore>()(
           detail
         );
         afterLiveUpdate(next);
+      },
+
+      swapStrikerManually: () => {
+        const { live, pushUndo } = get();
+        if (!live) return;
+        if (live.awaitingNextPairSelection || live.awaitingBowlerSelection) return;
+        if (!live.currentPairPlayerIds[0] || !live.currentPairPlayerIds[1])
+          return;
+        if (live.currentPairNumber > 5) return;
+        pushUndo();
+        set({ live: { ...live, strikerIsFirst: !live.strikerIsFirst } });
       },
 
       setCurrentBowler: (playerId) =>
