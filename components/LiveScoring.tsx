@@ -197,6 +197,9 @@ export function LiveScoring() {
   const [pairModalError, setPairModalError] = useState<string | null>(null);
   const [bowlerModalError, setBowlerModalError] = useState<string | null>(null);
   const [extraKind, setExtraKind] = useState<"wide" | "no_ball" | null>(null);
+  const [extraWicketKind, setExtraWicketKind] = useState<
+    "wide" | "no_ball" | null
+  >(null);
   const config = useMatchStore((s) => s.config);
   const live = useMatchStore((s) => s.live);
   const inningsNumber = useMatchStore((s) => s.inningsNumber);
@@ -209,6 +212,9 @@ export function LiveScoring() {
   const scoreNoBall = useMatchStore((s) => s.scoreNoBall);
   const scoreWicketWithDetail = useMatchStore(
     (s) => s.scoreWicketWithDetail
+  );
+  const scoreExtraWicketWithDetail = useMatchStore(
+    (s) => s.scoreExtraWicketWithDetail
   );
   const setCurrentBowler = useMatchStore((s) => s.setCurrentBowler);
   const submitNextOverBowler = useMatchStore((s) => s.submitNextOverBowler);
@@ -374,6 +380,28 @@ export function LiveScoring() {
           >
             No ball
           </button>
+          <button
+            type="button"
+            disabled={!canDeliver}
+            onClick={() => {
+              setWicketOpen(false);
+              setExtraWicketKind("wide");
+            }}
+            className="h-12 rounded-2xl border-2 border-red-400 bg-red-50 text-sm font-bold text-red-900 disabled:opacity-40 dark:border-red-700 dark:bg-red-950/50 dark:text-red-200"
+          >
+            Wide + W
+          </button>
+          <button
+            type="button"
+            disabled={!canDeliver}
+            onClick={() => {
+              setWicketOpen(false);
+              setExtraWicketKind("no_ball");
+            }}
+            className="h-12 rounded-2xl border-2 border-red-400 bg-red-50 text-sm font-bold text-red-900 disabled:opacity-40 dark:border-red-700 dark:bg-red-950/50 dark:text-red-200"
+          >
+            No ball + W
+          </button>
         </div>
       </section>
 
@@ -381,7 +409,10 @@ export function LiveScoring() {
         <button
           type="button"
           disabled={!canDeliver}
-          onClick={() => setWicketOpen(true)}
+          onClick={() => {
+            setExtraWicketKind(null);
+            setWicketOpen(true);
+          }}
           className="h-14 rounded-2xl border-2 border-red-400 bg-red-50 text-sm font-bold text-red-800 active:scale-[0.98] disabled:opacity-40 dark:bg-red-950/40 dark:text-red-200"
         >
           Wicket (−5)
@@ -512,11 +543,20 @@ export function LiveScoring() {
         )}
 
       <WicketSheet
-        open={wicketOpen}
-        onClose={() => setWicketOpen(false)}
+        open={wicketOpen || extraWicketKind != null}
+        onClose={() => {
+          setWicketOpen(false);
+          setExtraWicketKind(null);
+        }}
         config={config}
         live={live}
-        onSubmit={(detail) => scoreWicketWithDetail(detail)}
+        onSubmit={(detail) => {
+          if (extraWicketKind) {
+            scoreExtraWicketWithDetail(extraWicketKind, detail);
+          } else {
+            scoreWicketWithDetail(detail);
+          }
+        }}
       />
 
       <p className="text-center text-[11px] leading-relaxed text-zinc-500">

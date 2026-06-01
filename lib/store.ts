@@ -19,6 +19,7 @@ import { upgradeLiveInningsV2ToV3 } from "@/lib/migrate-innings-v3";
 import { upgradeLiveInningsV3ToV4 } from "@/lib/migrate-innings-v4";
 import {
   addNoBall,
+  addExtraWicket,
   addRuns,
   addWide,
   addWicket,
@@ -162,6 +163,10 @@ export interface MatchStore {
   scoreWide: (additionalRuns: 0 | 1 | 2 | 3 | 4 | 6) => void;
   scoreNoBall: (batRuns: 0 | 1 | 2 | 3 | 4 | 6) => void;
   scoreWicketWithDetail: (detail: WicketDetailInput) => void;
+  scoreExtraWicketWithDetail: (
+    extraType: "wide" | "no_ball",
+    detail: WicketDetailInput
+  ) => void;
   setCurrentBowler: (playerId: string | null) => void;
   /** After a completed over (6 legal balls); cannot be same bowler as previous over */
   submitNextOverBowler: (bowlerId: string) => string | null;
@@ -445,6 +450,25 @@ export const useMatchStore = create<MatchStore>()(
         if (live.legalBalls >= maxLegalBalls(config.maxOvers)) return;
         pushUndo();
         const next = addWicket(live, inningsNumber, config, detail);
+        afterLiveUpdate(next);
+      },
+
+      scoreExtraWicketWithDetail: (extraType, detail) => {
+        const { live, config, inningsNumber, pushUndo, afterLiveUpdate } = get();
+        if (!live || !config) return;
+        if (live.awaitingNextPairSelection || live.awaitingBowlerSelection) return;
+        if (!live.currentPairPlayerIds[0] || !live.currentPairPlayerIds[1])
+          return;
+        if (live.currentPairNumber > 5) return;
+        if (live.legalBalls >= maxLegalBalls(config.maxOvers)) return;
+        pushUndo();
+        const next = addExtraWicket(
+          live,
+          inningsNumber,
+          config,
+          extraType,
+          detail
+        );
         afterLiveUpdate(next);
       },
 

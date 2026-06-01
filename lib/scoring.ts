@@ -106,6 +106,26 @@ function creditBowlerExtrasOnly(
   return creditBowlerRunsAndLegal(inn, bowlerId, runs, 0);
 }
 
+function creditBowlerIllegalWicket(
+  inn: LiveInnings,
+  bowlerId: string | null | undefined,
+  runsConceded: number
+): LiveInnings {
+  if (!bowlerId) return inn;
+  const f = ensureBowlerFigure(inn.bowlerFigures, bowlerId);
+  return {
+    ...inn,
+    bowlerFigures: {
+      ...inn.bowlerFigures,
+      [bowlerId]: {
+        ...f,
+        runsConceded: f.runsConceded + runsConceded,
+        wickets: f.wickets + 1,
+      },
+    },
+  };
+}
+
 /** 0-based over index and completed legals in current over (before next delivery). */
 export function legalContextFromInningsLegalBalls(legalBalls: number): {
   overNumber: number;
@@ -540,6 +560,59 @@ export function addWicket(
     description: "W",
   });
   next = maybeMarkOverFinished(next, legalBallsAfter);
+  return afterPairBlockDelivery(next, inningsNum);
+}
+
+export function addExtraWicket(
+  inn: LiveInnings,
+  inningsNum: 1 | 2,
+  config: MatchConfig,
+  extraType: "wide" | "no_ball",
+  input: WicketDetailInput
+): LiveInnings {
+  const pIdx = eventPairIndex(inn);
+  const automaticExtra = 1;
+  const penalty = WICKET_PENALTY;
+  const runsDelta = automaticExtra - penalty;
+  const bowlerCredit =
+    input.bowlerPlayerId ?? inn.currentBowlerPlayerId ?? null;
+  const ctx = legalContextFromInningsLegalBalls(inn.legalBalls);
+  const snapshot: WicketSnapshot = {
+    ...input,
+    legalBallsAfter: inn.legalBalls,
+    over: ctx.overNumber,
+    ball: ctx.ballInOver + 1,
+  };
+  const baseLabel = formatWicketShort(snapshot, config, inn.battingSide);
+  const code = extraType === "wide" ? "WD+W" : "NB+W";
+  let next: LiveInnings = {
+    ...inn,
+    runs: inn.runs + runsDelta,
+    wicketEvents: inn.wicketEvents + 1,
+    wicketPenaltyRuns: inn.wicketPenaltyRuns + penalty,
+    currentPairRuns: inn.currentPairRuns + runsDelta,
+    currentPairWicketEvents: inn.currentPairWicketEvents + 1,
+    currentBowlerPlayerId:
+      input.bowlerPlayerId ?? inn.currentBowlerPlayerId ?? null,
+  };
+  next = creditBowlerIllegalWicket(next, bowlerCredit, automaticExtra);
+  next = pushEvent(next, inningsNum, {
+    kind: "wicket",
+    runsDelta,
+    totalAfter: next.runs,
+    legalBallsAfter: inn.legalBalls,
+    label: `${extraType === "wide" ? "Wide" : "No ball"} + wicket — ${baseLabel}`,
+    pairIndex: pIdx,
+    wicket: snapshot,
+    isLegalDelivery: false,
+    overNumber: ctx.overNumber,
+    ballInOver: ctx.ballInOver,
+    extras: automaticExtra,
+    extraType,
+    batterRuns: 0,
+    bowlerPlayerIdAtDelivery: bowlerCredit,
+    description: code,
+  });
   return afterPairBlockDelivery(next, inningsNum);
 }
 
