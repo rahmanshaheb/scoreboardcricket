@@ -1,0 +1,74 @@
+// SQLite database for finished matches, innings scores, and per-pair player records.
+// Run: npx prisma db push && npx prisma generate
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Match {
+  id           String   @id @default(cuid())
+  /// Idempotency: same client session cannot save twice.
+  externalId   String?  @unique
+  createdAt    DateTime @default(now())
+  completedAt  DateTime @default(now())
+
+  teamAName  String
+  teamBName  String
+  maxOvers   Int
+  tossWinner String
+  batFirst   String
+
+  winnerSide String?
+  headline   String
+  detail     String
+
+  innings       ScoreInnings[]
+  pairScores    PairScoreRecord[]
+}
+
+/// One row per innings (team total + JSON snapshots).
+model ScoreInnings {
+  id                String @id @default(cuid())
+  matchId           String
+  match             Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  inningsNumber     Int
+  battingSide       String
+  runs              Int
+  legalBalls        Int
+  wicketEvents      Int
+  wicketPenaltyRuns Int
+
+  pairStatsJson String
+  eventsJson    String?
+
+  @@index([matchId])
+}
+
+/// One row per batting pair in an innings (for player leaderboards).
+model PairScoreRecord {
+  id            String @id @default(cuid())
+  matchId       String
+  match         Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  inningsNumber Int
+  teamSide      String
+  pairOrder     Int
+
+  player1Name String
+  player1Key  String
+  player2Name String
+  player2Key  String
+
+  runs         Int
+  wicketEvents Int
+
+  @@index([matchId])
+  @@index([player1Key])
+  @@index([player2Key])
+}
