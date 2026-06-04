@@ -1,61 +1,31 @@
 "use client";
 
-import { OVERS_PER_PAIR_BLOCK, TIMELINE_VISIBLE } from "@/lib/constants";
+import { OVERS_PER_PAIR_BLOCK } from "@/lib/constants";
 import {
-  computeOutcome,
-  computeWinMargin,
-} from "@/lib/match-result";
+  computePlayerBattingStats,
+  strikerPlayerId,
+} from "@/lib/batting-stats";
 import {
   currentDisplayInnings,
   derivePublicMode,
 } from "@/lib/scoreboard-state";
 import {
   bowlingSide,
-  maxLegalBalls,
+  ensureBowlerFigure,
   oversFormat,
   pairPlayerNamesFromIds,
   playerById,
-  remainingBatters,
 } from "@/lib/scoring";
-import { timelineCompactLabel } from "@/lib/event-label";
-import { formatWicketDetailed, formatWicketShort } from "@/lib/wicket-format";
 import { useMatchStore } from "@/lib/store";
-import type { BallEvent, LiveInnings, MatchConfig, Side } from "@/lib/types";
+import type { LiveInnings, MatchConfig, Side } from "@/lib/types";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-
-const STATUS: Record<string, string> = {
-  idle: "No live match",
-  setup: "Setup in progress",
-  first_innings: "First innings",
-  innings_break: "Innings break",
-  second_innings: "Second innings",
-  completed: "Match completed",
-};
 
 function roster(config: MatchConfig, side: Side) {
   return side === "a" ? config.teamA : config.teamB;
 }
 
-function lastWicketLine(
-  events: BallEvent[],
-  config: MatchConfig,
-  battingSide: Side
-): string | null {
-  const w = [...events].reverse().find((e) => e.kind === "wicket");
-  if (!w) return null;
-  return w.wicket
-    ? formatWicketShort(w.wicket, config, battingSide)
-    : w.label;
-}
-
-function PairTable({
-  title,
-  inn,
-  config,
-  battingSide,
-}: {
-  title: string;
+function PairRuns({ inn, config, battingSide }: {
   inn: LiveInnings;
   config: MatchConfig;
   battingSide: Side;
@@ -68,71 +38,154 @@ function PairTable({
   const [ca, cb] = showCurrent
     ? pairPlayerNamesFromIds(r, inn.currentPairPlayerIds)
     : ["", ""];
+
   return (
-    <div className="mt-3">
-      <p className="text-xs font-bold uppercase tracking-wider opacity-80">
-        {title}
-      </p>
-      <ul className="mt-1 space-y-1 text-sm">
-        {inn.completedPairs.map((p) => {
-          const [a, b] = pairPlayerNamesFromIds(r, p.playerIds);
-          return (
-            <li
-              key={p.pairNumber}
-              className="flex justify-between border-b border-white/10 py-1 last:border-0"
-            >
-              <span>
-                Pair {p.pairNumber}: {a} & {b}
-              </span>
-              <span className="tabular-nums font-semibold">
-                {p.runs} r · {p.wicketEvents} w · {oversFormat(p.legalBalls)} ov
-              </span>
-            </li>
-          );
-        })}
-        {showCurrent ? (
-          <li className="flex justify-between border-b border-emerald-500/30 bg-emerald-950/20 py-2">
-            <span>
-              <span className="text-emerald-400">Now ·</span> Pair{" "}
-              {inn.currentPairNumber}: {ca} & {cb}
+    <ul className="mt-2 space-y-2 text-sm">
+      {inn.completedPairs.map((p) => {
+        const [a, b] = pairPlayerNamesFromIds(r, p.playerIds);
+        return (
+          <li
+            key={p.pairNumber}
+            className="flex justify-between border-b border-white/10 py-2 last:border-0"
+          >
+            <span className="text-zinc-300">
+              Pair {p.pairNumber}: {a} & {b}
             </span>
-            <span className="tabular-nums font-semibold text-emerald-200">
-              {inn.currentPairRuns} r · {inn.currentPairWicketEvents} w ·{" "}
-              {oversFormat(inn.pairBlockLegalBalls)}/{OVERS_PER_PAIR_BLOCK} ov
+            <span className="tabular-nums text-lg font-bold text-white">
+              {p.runs}
             </span>
           </li>
-        ) : null}
-      </ul>
-    </div>
+        );
+      })}
+      {showCurrent ? (
+        <li className="flex justify-between rounded-lg bg-emerald-950/40 px-2 py-2">
+          <span className="text-emerald-200">
+            Pair {inn.currentPairNumber}: {ca} & {cb}
+          </span>
+          <span className="tabular-nums text-lg font-bold text-emerald-100">
+            {inn.currentPairRuns}
+          </span>
+        </li>
+      ) : null}
+    </ul>
   );
 }
 
-function WicketList({
-  events,
+function PlayerRunsTable({
+  inn,
   config,
   battingSide,
 }: {
-  events: BallEvent[];
+  inn: LiveInnings;
   config: MatchConfig;
   battingSide: Side;
 }) {
-  const ws = events.filter((e) => e.kind === "wicket");
-  if (ws.length === 0) return null;
+  const r = roster(config, battingSide);
+  const lines = computePlayerBattingStats(inn, r);
+  const striker = strikerPlayerId(inn);
+
+  if (lines.length === 0) {
+    return <p className="mt-2 text-sm text-zinc-500">No batters yet.</p>;
+  }
+
   return (
-    <ol className="mt-2 list-decimal space-y-1 pl-4 text-sm opacity-95">
-      {ws.map((e) => (
-        <li key={e.id}>
-          {e.wicket
-            ? formatWicketDetailed(
-                e.wicket,
-                config,
-                battingSide,
-                e.pairIndex
-              )
-            : e.label}
+    <ul className="mt-2 space-y-1.5">
+      {lines.map((p) => (
+        <li
+          key={p.playerId}
+          className={`flex justify-between rounded-lg px-2 py-2 ${
+            p.playerId === striker
+              ? "bg-emerald-950/50 ring-1 ring-emerald-500/40"
+              : "bg-black/20"
+          }`}
+        >
+          <span
+            className={
+              p.playerId === striker
+                ? "font-bold text-emerald-100"
+                : "text-zinc-200"
+            }
+          >
+            {p.name}
+            {p.playerId === striker ? (
+              <span className="ml-1 text-xs text-emerald-400">*</span>
+            ) : null}
+          </span>
+          <span className="tabular-nums font-bold text-white">
+            {p.runs}{" "}
+            <span className="text-sm font-semibold text-zinc-500">
+              ({p.balls}b)
+            </span>
+          </span>
         </li>
       ))}
-    </ol>
+    </ul>
+  );
+}
+
+function BowlerState({
+  inn,
+  config,
+  fieldingSide,
+}: {
+  inn: LiveInnings;
+  config: MatchConfig;
+  fieldingSide: Side;
+}) {
+  const r = roster(config, fieldingSide);
+  const currentId = inn.currentBowlerPlayerId;
+  const currentName = currentId
+    ? playerById(r, currentId)
+    : "—";
+
+  const withFigures = r.players
+    .map((p) => ({
+      id: p.id,
+      name: p.name || "?",
+      fig: ensureBowlerFigure(inn.bowlerFigures, p.id),
+    }))
+    .filter(
+      (x) =>
+        x.fig.legalBallsBowled > 0 ||
+        x.fig.runsConceded > 0 ||
+        x.fig.wickets > 0 ||
+        x.id === currentId
+    );
+
+  return (
+    <div className="mt-2 space-y-3">
+      <div className="rounded-lg bg-violet-950/40 px-3 py-2 text-center">
+        <p className="text-xs uppercase tracking-wider text-violet-300">
+          Bowling now
+        </p>
+        <p className="mt-1 text-xl font-bold text-white">{currentName}</p>
+        {inn.awaitingBowlerSelection ? (
+          <p className="mt-1 text-xs text-amber-200">Over complete — change bowler</p>
+        ) : null}
+      </div>
+      {withFigures.length > 0 ? (
+        <ul className="space-y-1.5 text-sm">
+          {withFigures.map((b) => (
+            <li
+              key={b.id}
+              className={`flex flex-wrap justify-between gap-2 rounded-lg px-2 py-2 ${
+                b.id === currentId
+                  ? "bg-violet-950/30 ring-1 ring-violet-500/30"
+                  : "bg-black/20"
+              }`}
+            >
+              <span className="font-semibold text-zinc-200">{b.name}</span>
+              <span className="tabular-nums text-zinc-400">
+                {oversFormat(b.fig.legalBallsBowled)} ov · {b.fig.runsConceded}r ·{" "}
+                {b.fig.wickets}w
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-zinc-500">No bowling figures yet.</p>
+      )}
+    </div>
   );
 }
 
@@ -184,15 +237,8 @@ export function PublicScoreboard() {
   if (mode === "idle") {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center bg-zinc-950 px-6 text-center text-zinc-100">
-        <h1 className="text-2xl font-bold">Live Scoreboard</h1>
-        <p className="mt-4 text-lg text-zinc-400">
-          No live match available
-        </p>
-        <p className="mt-2 max-w-sm text-sm text-zinc-500">
-          Start a match on the scorer device, then open this page on any screen
-          linked to the same browser profile (or another tab on the same
-          device).
-        </p>
+        <h1 className="text-2xl font-bold">Live scoreboard</h1>
+        <p className="mt-4 text-lg text-zinc-400">No live match</p>
         {!fullscreen && (
           <Link
             href="/"
@@ -208,11 +254,8 @@ export function PublicScoreboard() {
   if (mode === "setup" || !config) {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center bg-zinc-950 px-6 text-center text-zinc-100">
-        <h1 className="text-2xl font-bold">Live Scoreboard</h1>
-        <p className="mt-4 text-lg text-zinc-400">Match setup in progress</p>
-        <p className="mt-2 text-sm text-zinc-500">
-          The score will appear here once the match has started.
-        </p>
+        <h1 className="text-2xl font-bold">Live scoreboard</h1>
+        <p className="mt-4 text-lg text-zinc-400">Match not started yet</p>
         {!fullscreen && (
           <Link
             href="/"
@@ -227,12 +270,7 @@ export function PublicScoreboard() {
 
   const teamAv = config.teamA.name;
   const teamBv = config.teamB.name;
-  const tossW =
-    config.tossWinner === "a" ? teamAv : teamBv;
-  const batFirstN =
-    config.batFirst === "a" ? teamAv : teamBv;
 
-  /** Live or primary innings row for big score */
   const scoreInn: LiveInnings | null =
     mode === "completed"
       ? innings2Result ?? innings1Result
@@ -240,140 +278,54 @@ export function PublicScoreboard() {
         ? innings1Result
         : live;
 
-  const battingSideForMain: Side | null =
+  const battingSide: Side | null =
     mode === "completed" && innings2Result
       ? innings2Result.battingSide
       : mode === "innings_break" && innings1Result
-        ? bowlingSide(innings1Result.battingSide)
+        ? innings1Result.battingSide
         : live
           ? live.battingSide
           : null;
 
-  const bowlSideMain =
-    battingSideForMain != null
-      ? bowlingSide(battingSideForMain)
-      : ("a" as Side);
+  const fieldingSide =
+    battingSide != null ? bowlingSide(battingSide) : ("a" as Side);
 
-  const mainBatName =
-    battingSideForMain != null
-      ? battingSideForMain === "a"
-        ? teamAv
-        : teamBv
-      : "—";
-  const mainBowlName =
-    battingSideForMain != null
-      ? bowlSideMain === "a"
-        ? teamAv
-        : teamBv
-      : "—";
+  const batName =
+    battingSide === "a" ? teamAv : battingSide === "b" ? teamBv : "—";
 
   const runs = scoreInn?.runs ?? 0;
-  const wkts = scoreInn?.wicketEvents ?? 0;
   const balls = scoreInn?.legalBalls ?? 0;
-  const pen = scoreInn?.wicketPenaltyRuns ?? 0;
-  const cap = maxLegalBalls(config.maxOvers);
-  const ballsLeft = Math.max(0, cap - balls);
 
-  const completedDual =
-    mode === "completed" && innings1Result && innings2Result
-      ? {
-          firstBat: innings1Result.battingSide,
-          firstRuns: innings1Result.runs,
-          firstWk: innings1Result.wicketEvents,
-          secondRuns: innings2Result.runs,
-          secondWk: innings2Result.wicketEvents,
-        }
-      : null;
-
-  const strikerLine = (() => {
-    if (
-      !live ||
-      live.currentPairNumber > 5 ||
-      !live.currentPairPlayerIds[0] ||
-      !live.currentPairPlayerIds[1]
-    ) {
-      return { s: "—", ns: "—" };
-    }
-    const r = roster(config, live.battingSide);
-    const [p1, p2] = pairPlayerNamesFromIds(r, live.currentPairPlayerIds);
-    return live.strikerIsFirst
-      ? { s: p1, ns: p2 }
-      : { s: p2, ns: p1 };
-  })();
-
-  const remainingLive =
-    live && mode !== "innings_break"
-      ? remainingBatters(roster(config, live.battingSide), live)
-      : [];
-
-  const bowlerName =
-    live && battingSideForMain != null
-      ? live.currentBowlerPlayerId
-        ? playerById(roster(config, bowlSideMain), live.currentBowlerPlayerId)
-        : "—"
-      : "—";
-
-  const eventsForFeed: BallEvent[] =
-    mode === "completed"
-      ? [
-          ...(innings1Result?.events ?? []),
-          ...(innings2Result?.events ?? []),
-        ]
-      : mode === "innings_break"
-        ? innings1Result?.events ?? []
-        : live?.events ?? [];
-
-  const battingSideForWicket: Side =
-    live?.battingSide ??
-    innings2Result?.battingSide ??
-    innings1Result?.battingSide ??
-    config.batFirst;
-
-  const lastWkt = lastWicketLine(eventsForFeed, config, battingSideForWicket);
-
-  const target =
-    innings1Result != null ? innings1Result.runs + 1 : null;
-  const need =
-    live && innings1Result != null && mode === "second_innings"
-      ? Math.max(0, target! - live.runs)
-      : null;
-
-  const outcome =
-    mode === "completed" && innings1Result && innings2Result
-      ? computeOutcome(config, innings1Result, innings2Result)
-      : null;
-  const margin =
-    mode === "completed" && innings1Result && innings2Result
-      ? computeWinMargin(innings1Result, innings2Result)
-      : null;
+  const innForDetail =
+    mode === "innings_break" ? innings1Result : displayInn;
 
   const fsChrome = fullscreen ? "hidden" : "";
 
   return (
     <div
       className={`min-h-dvh bg-zinc-950 text-zinc-50 ${
-        fullscreen ? "px-3 py-4" : ""
+        fullscreen ? "px-2 py-3" : ""
       }`}
     >
       <div
         className={`sticky top-0 z-20 border-b border-white/10 bg-zinc-950/95 py-2 backdrop-blur ${fsChrome}`}
       >
         <div className="mx-auto flex max-w-2xl items-center justify-between gap-2 px-2">
-          <span className="text-xs font-bold uppercase tracking-widest text-emerald-400">
-            Live Scoreboard
+          <span className="truncate text-sm font-bold text-emerald-400">
+            {batName}
           </span>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={toggleFullscreen}
-              className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-xs font-bold text-white"
+              className="rounded-lg border border-white/20 px-3 py-1.5 text-xs font-bold"
             >
-              {fullscreen ? "Exit full" : "Fullscreen"}
+              {fullscreen ? "Exit" : "Full"}
             </button>
             {!fullscreen && (
               <Link
                 href="/"
-                className="rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold text-zinc-300"
+                className="rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold text-zinc-400"
               >
                 Home
               </Link>
@@ -382,295 +334,68 @@ export function PublicScoreboard() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-2xl space-y-6 px-3 py-4 pb-16">
-        <header className="text-center">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-            Match
+      <div className="mx-auto max-w-2xl space-y-4 px-3 py-4 pb-12">
+        <header className="rounded-2xl border border-white/10 bg-white/5 py-6 text-center">
+          <p className="text-5xl font-black tabular-nums tracking-tight text-white sm:text-7xl">
+            {runs}
           </p>
-          <h1 className="mt-1 text-2xl font-black tracking-tight text-white sm:text-4xl">
-            {teamAv}{" "}
-            <span className="font-bold text-zinc-500">v</span> {teamBv}
-          </h1>
-          {completedDual ? (
-            <div className="mt-3 grid grid-cols-2 gap-4 px-2">
-              <div className="rounded-xl bg-white/5 py-3">
-                <p className="text-xs uppercase text-zinc-500">
-                  {completedDual.firstBat === "a" ? teamAv : teamBv}
-                </p>
-                <p className="mt-1 text-4xl font-black tabular-nums text-white">
-                  {completedDual.firstRuns}
-                  <span className="text-2xl font-bold text-zinc-500">
-                    /{completedDual.firstWk}
-                  </span>
-                </p>
-              </div>
-              <div className="rounded-xl bg-white/5 py-3">
-                <p className="text-xs uppercase text-zinc-500">
-                  {completedDual.firstBat === "a" ? teamBv : teamAv}
-                </p>
-                <p className="mt-1 text-4xl font-black tabular-nums text-white">
-                  {completedDual.secondRuns}
-                  <span className="text-2xl font-bold text-zinc-500">
-                    /{completedDual.secondWk}
-                  </span>
-                </p>
-              </div>
-            </div>
-          ) : (
-            <>
-              <h1 className="mt-1 text-3xl font-black tracking-tight text-white sm:text-5xl">
-                {runs}
-                <span className="text-2xl font-bold text-zinc-500 sm:text-4xl">
-                  {" "}
-                  / {wkts} wkts
-                </span>
-              </h1>
-              <p className="mt-2 font-mono text-2xl font-bold tabular-nums text-zinc-200 sm:text-4xl">
-                {oversFormat(balls)}{" "}
-                <span className="text-lg text-zinc-500 sm:text-2xl">ov</span>
-              </p>
-              <p className="mt-1 text-sm text-zinc-400">
-                {ballsLeft} balls left · Wicket penalties: {pen} runs
-              </p>
-            </>
+          <p className="mt-1 text-xs font-bold uppercase tracking-widest text-zinc-500">
+            Runs
+          </p>
+          <p className="mt-4 font-mono text-4xl font-bold tabular-nums text-emerald-300 sm:text-5xl">
+            {oversFormat(balls)}
+          </p>
+          <p className="mt-1 text-xs font-bold uppercase tracking-widest text-zinc-500">
+            Overs
+          </p>
+          {mode === "completed" && innings1Result && innings2Result && (
+            <p className="mt-4 text-sm text-zinc-400">
+              1st: {innings1Result.runs} ({oversFormat(innings1Result.legalBalls)}{" "}
+              ov) · 2nd: {innings2Result.runs} (
+              {oversFormat(innings2Result.legalBalls)} ov)
+            </p>
           )}
-          <div className="mt-3 inline-block rounded-full border border-emerald-500/40 bg-emerald-950/50 px-4 py-1.5 text-sm font-bold text-emerald-300">
-            {STATUS[mode] ?? mode}
-          </div>
         </header>
 
-        {mode !== "completed" && (
-          <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <p className="text-center text-xs font-bold uppercase tracking-wider text-zinc-500">
-              Current innings
-            </p>
-            <p className="mt-2 text-center text-lg font-bold text-white">
-              Batting: {mainBatName}
-            </p>
-            <p className="text-center text-sm text-zinc-400">
-              Fielding: {mainBowlName}
-            </p>
-            {mode === "second_innings" && target != null && (
-              <p className="mt-3 rounded-xl bg-amber-500/15 px-3 py-2 text-center text-sm font-bold text-amber-200">
-                Target {target} to win
-                {need != null && (
-                  <>
-                    {" "}
-                    · Need {need} run{need === 1 ? "" : "s"}
-                  </>
+        {innForDetail && battingSide != null && (
+          <>
+            <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                Pair runs
+              </h2>
+              <PairRuns
+                inn={innForDetail}
+                config={config}
+                battingSide={battingSide}
+              />
+              {innForDetail.currentPairNumber <= 5 &&
+                !innForDetail.awaitingNextPairSelection && (
+                  <p className="mt-2 text-center text-xs text-zinc-500">
+                    Pair block: {oversFormat(innForDetail.pairBlockLegalBalls)}/
+                    {OVERS_PER_PAIR_BLOCK} ov
+                  </p>
                 )}
-                {" · "}
-                {ballsLeft} balls left
-              </p>
-            )}
-            {mode === "innings_break" && innings1Result && target != null && (
-              <p className="mt-3 rounded-xl bg-amber-500/15 px-3 py-2 text-center text-sm font-bold text-amber-200">
-                Next innings target {target} to win · Tie on{" "}
-                {innings1Result.runs}
-              </p>
-            )}
-            {live &&
-              live.currentPairNumber <= 5 &&
-              mode !== "innings_break" && (
-              <>
-                <p className="mt-4 text-center text-sm text-zinc-400">
-                  {live.awaitingNextPairSelection
-                    ? `Select pair ${live.currentPairNumber}`
-                    : `Pair ${live.currentPairNumber} of 5`}
-                </p>
-                <div className="mt-2 grid gap-2 text-center text-base">
-                  <p>
-                    <span className="text-zinc-500">Striker:</span>{" "}
-                    <span className="font-bold text-white">{strikerLine.s}</span>
-                  </p>
-                  <p>
-                    <span className="text-zinc-500">Non-striker:</span>{" "}
-                    <span className="font-bold text-white">{strikerLine.ns}</span>
-                  </p>
-                  <p>
-                    <span className="text-zinc-500">Bowler:</span>{" "}
-                    <span className="font-bold text-white">{bowlerName}</span>
-                  </p>
-                </div>
-                {live.awaitingBowlerSelection ? (
-                  <p className="mt-2 text-center text-sm font-semibold text-amber-200">
-                    Over complete — scorer is selecting the next bowler
-                  </p>
-                ) : null}
-                {!live.awaitingNextPairSelection &&
-                  remainingLive.length > 0 && (
-                    <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-left">
-                      <p className="text-xs font-bold uppercase text-zinc-500">
-                        Yet to bat
-                      </p>
-                      <ul className="mt-2 text-sm text-zinc-300">
-                        {remainingLive.map((p) => (
-                          <li key={p.id}>{p.name || "Unnamed"}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-              </>
-            )}
-            {mode === "innings_break" && (
-              <p className="mt-4 text-center text-sm text-zinc-400">
-                First innings complete. Second innings starts from the scorer
-                app.
-              </p>
-            )}
-          </section>
+            </section>
+
+            <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                Batters
+              </h2>
+              <PlayerRunsTable
+                inn={innForDetail}
+                config={config}
+                battingSide={battingSide}
+              />
+            </section>
+          </>
         )}
 
-        {lastWkt && (
-          <section className="rounded-2xl border border-red-500/30 bg-red-950/20 p-4">
-            <p className="text-xs font-bold uppercase tracking-wider text-red-300">
-              Last wicket
-            </p>
-            <p className="mt-1 text-lg font-bold text-red-100">{lastWkt}</p>
-          </section>
-        )}
-
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-            Recent deliveries
-          </p>
-          <ul className="mt-2 max-h-56 space-y-2 overflow-y-auto text-sm">
-            {eventsForFeed.length === 0 ? (
-              <li className="text-zinc-500">No balls yet.</li>
-            ) : (
-              eventsForFeed
-                .slice(-TIMELINE_VISIBLE)
-                .reverse()
-                .map((e) => (
-                  <li
-                    key={e.id}
-                    className="flex justify-between gap-2 border-b border-white/5 pb-2"
-                  >
-                    <span className="font-medium">{timelineCompactLabel(e)}</span>
-                    <span className="shrink-0 tabular-nums text-zinc-500">
-                      {e.totalAfter}/{oversFormat(e.legalBallsAfter)}
-                    </span>
-                  </li>
-                ))
-            )}
-          </ul>
-        </section>
-
-        {mode !== "completed" &&
-          (() => {
-            const innForPairs =
-              mode === "innings_break" ? innings1Result : displayInn;
-            const sideForPairs =
-              mode === "innings_break" && innings1Result
-                ? innings1Result.battingSide
-                : battingSideForMain;
-            if (!innForPairs || sideForPairs == null) return null;
-            const title =
-              mode === "innings_break"
-                ? `${
-                    innings1Result!.battingSide === "a" ? teamAv : teamBv
-                  } (1st innings)`
-                : `${mainBatName} batting`;
-            return (
-              <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-                  Pair scores
-                </p>
-                <PairTable
-                  title={title}
-                  inn={innForPairs}
-                  config={config}
-                  battingSide={sideForPairs}
-                />
-              </section>
-            );
-          })()}
-
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-zinc-300">
-          <p>
-            <span className="text-zinc-500">Toss:</span>{" "}
-            <strong className="text-white">{tossW}</strong> won
-          </p>
-          <p className="mt-1">
-            <span className="text-zinc-500">Bat first:</span>{" "}
-            <strong className="text-white">{batFirstN}</strong>
-          </p>
-          <p className="mt-1 text-zinc-500">
-            {config.maxOvers} overs per innings · Pair cricket (−5 per wicket
-            event)
-          </p>
-        </section>
-
-        {mode === "completed" && innings1Result && innings2Result && (
-          <section className="space-y-4 rounded-2xl border-2 border-emerald-500/40 bg-emerald-950/20 p-4">
-            <p className="text-center text-xs font-bold uppercase tracking-widest text-emerald-300">
-              Final result
-            </p>
-            <p className="text-center text-2xl font-black text-white">
-              {outcome?.headline}
-            </p>
-            <p className="text-center text-sm text-emerald-100/90">
-              {outcome?.detail}
-            </p>
-            <p className="text-center text-base font-bold text-emerald-200">
-              {margin}
-            </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl bg-black/20 p-3">
-                <p className="text-xs font-bold uppercase text-zinc-500">
-                  1st innings
-                </p>
-                <p className="mt-1 text-xl font-bold tabular-nums">
-                  {innings1Result.battingSide === "a" ? teamAv : teamBv}:{" "}
-                  {innings1Result.runs}/{innings1Result.wicketEvents}
-                </p>
-                <p className="text-sm text-zinc-400">
-                  {oversFormat(innings1Result.legalBalls)} ov · penalties{" "}
-                  {innings1Result.wicketPenaltyRuns}
-                </p>
-                <PairTable
-                  title="Pairs"
-                  inn={innings1Result}
-                  config={config}
-                  battingSide={innings1Result.battingSide}
-                />
-                <p className="mt-2 text-xs font-bold uppercase text-zinc-500">
-                  Wickets
-                </p>
-                <WicketList
-                  events={innings1Result.events}
-                  config={config}
-                  battingSide={innings1Result.battingSide}
-                />
-              </div>
-              <div className="rounded-xl bg-black/20 p-3">
-                <p className="text-xs font-bold uppercase text-zinc-500">
-                  2nd innings
-                </p>
-                <p className="mt-1 text-xl font-bold tabular-nums">
-                  {innings2Result.battingSide === "a" ? teamAv : teamBv}:{" "}
-                  {innings2Result.runs}/{innings2Result.wicketEvents}
-                </p>
-                <p className="text-sm text-zinc-400">
-                  {oversFormat(innings2Result.legalBalls)} ov · penalties{" "}
-                  {innings2Result.wicketPenaltyRuns}
-                </p>
-                <PairTable
-                  title="Pairs"
-                  inn={innings2Result}
-                  config={config}
-                  battingSide={innings2Result.battingSide}
-                />
-                <p className="mt-2 text-xs font-bold uppercase text-zinc-500">
-                  Wickets
-                </p>
-                <WicketList
-                  events={innings2Result.events}
-                  config={config}
-                  battingSide={innings2Result.battingSide}
-                />
-              </div>
-            </div>
+        {live && mode !== "innings_break" && mode !== "completed" && (
+          <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+              Bowlers
+            </h2>
+            <BowlerState inn={live} config={config} fieldingSide={fieldingSide} />
           </section>
         )}
       </div>

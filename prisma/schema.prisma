@@ -10,6 +10,22 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// In-progress match snapshot (updated while scoring).
+model LiveMatchSession {
+  id         String   @id @default(cuid())
+  /// Client matchSessionId (same as Match.externalId when finished).
+  externalId String   @unique
+  status     String   @default("live")
+  teamAName  String
+  teamBName  String
+  stateJson  String
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  @@index([status])
+  @@index([updatedAt])
+}
+
 model Match {
   id           String   @id @default(cuid())
   /// Idempotency: same client session cannot save twice.

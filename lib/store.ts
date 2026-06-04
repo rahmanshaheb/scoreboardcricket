@@ -1,7 +1,8 @@
 "use client";
 
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { matchStoreStorage } from "@/lib/storage";
 import {
   BALLS_PER_OVER,
   MAX_UNDO,
@@ -159,9 +160,9 @@ export interface MatchStore {
   goToPairSetup: () => string | null;
   startMatch: () => string | null;
 
-  scoreRuns: (n: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) => void;
-  scoreWide: (additionalRuns: 0 | 1 | 2 | 3 | 4 | 6) => void;
-  scoreNoBall: (batRuns: 0 | 1 | 2 | 3 | 4 | 6) => void;
+  scoreRuns: (n: number) => void;
+  scoreWide: (additionalRuns: number) => void;
+  scoreNoBall: (batRuns: number) => void;
   scoreWicketWithDetail: (detail: WicketDetailInput) => void;
   scoreExtraWicketWithDetail: (
     extraType: "wide" | "no_ball",
@@ -646,7 +647,7 @@ export const useMatchStore = create<MatchStore>()(
     {
       name: STORAGE_KEY,
       version: STORE_VERSION,
-      storage: createJSONStorage(() => localStorage),
+      storage: matchStoreStorage(),
       partialize: (s) => ({
         version: s.version,
         theme: s.theme,
@@ -748,8 +749,8 @@ export const useMatchStore = create<MatchStore>()(
         }
         return p;
       },
-      onRehydrateStorage: () => (state) => {
-        state?.setHydrated(true);
+      onRehydrateStorage: () => (state, err) => {
+        if (!err) state?.setHydrated(true);
       },
       skipHydration: true,
     }

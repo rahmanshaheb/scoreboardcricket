@@ -182,6 +182,62 @@ export function currentPairSlotPlayerIds(inn: LiveInnings): [string, string] {
   return inn.currentPairPlayerIds;
 }
 
+/** Build wicket input for one-tap outs (striker out, current bowler). */
+export function makeQuickWicket(
+  inn: LiveInnings,
+  dismissalType: WicketDetailInput["dismissalType"],
+  options: {
+    batterIsStriker?: boolean;
+    fielderId?: string;
+    bowlerId?: string | null;
+  } = {}
+): WicketDetailInput | null {
+  const [slot1, slot2] = currentPairSlotPlayerIds(inn);
+  if (!slot1 || !slot2) return null;
+  const batterIsStriker = options.batterIsStriker ?? true;
+  const batterPlayerId = batterIsStriker ? slot1 : slot2;
+  const bowlerPlayerId: string | null =
+    options.bowlerId !== undefined
+      ? options.bowlerId
+      : (inn.currentBowlerPlayerId ?? null);
+
+  if (dismissalType === "caught") {
+    if (!options.fielderId) return null;
+    return {
+      dismissalType,
+      bowlerPlayerId,
+      batterPlayerId,
+      catcherPlayerId: options.fielderId,
+      runOutKind: null,
+      fielderPlayerIds: [],
+      notes: "",
+    };
+  }
+
+  if (dismissalType === "run_out") {
+    if (!options.fielderId) return null;
+    return {
+      dismissalType,
+      bowlerPlayerId,
+      batterPlayerId,
+      catcherPlayerId: null,
+      runOutKind: "individual",
+      fielderPlayerIds: [options.fielderId],
+      notes: "",
+    };
+  }
+
+  return {
+    dismissalType,
+    bowlerPlayerId,
+    batterPlayerId,
+    catcherPlayerId: null,
+    runOutKind: null,
+    fielderPlayerIds: [],
+    notes: "",
+  };
+}
+
 export function pairPlayerNamesFromIds(
   roster: TeamRoster,
   ids: [string, string]
@@ -437,7 +493,7 @@ export function addRuns(
 export function addWide(
   inn: LiveInnings,
   inningsNum: 1 | 2,
-  additionalRuns: 0 | 1 | 2 | 3 | 4 | 6
+  additionalRuns: number
 ): LiveInnings {
   const total = 1 + additionalRuns;
   const pIdx = eventPairIndex(inn);
@@ -472,7 +528,7 @@ export function addWide(
 export function addNoBall(
   inn: LiveInnings,
   inningsNum: 1 | 2,
-  batRuns: 0 | 1 | 2 | 3 | 4 | 6
+  batRuns: number
 ): LiveInnings {
   const total = 1 + batRuns;
   const pIdx = eventPairIndex(inn);

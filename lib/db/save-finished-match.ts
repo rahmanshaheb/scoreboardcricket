@@ -1,3 +1,4 @@
+import { completeLiveMatchSession } from "@/lib/db/save-live-match";
 import { playerNameKey } from "@/lib/db/name-key";
 import { prisma } from "@/lib/prisma";
 import { playerById } from "@/lib/scoring";
@@ -82,6 +83,7 @@ export async function saveFinishedMatch(input: SaveFinishedMatchInput) {
       where: { externalId: input.externalId },
     });
     if (existing) {
+      await completeLiveMatchSession(input.externalId);
       return { ok: true as const, duplicate: true, matchId: existing.id };
     }
 
@@ -101,6 +103,8 @@ export async function saveFinishedMatch(input: SaveFinishedMatchInput) {
 
     await persistInnings(tx, m.id, 1, input.first, input.config);
     await persistInnings(tx, m.id, 2, input.second, input.config);
+
+    await completeLiveMatchSession(input.externalId);
 
     return { ok: true as const, duplicate: false, matchId: m.id };
   });

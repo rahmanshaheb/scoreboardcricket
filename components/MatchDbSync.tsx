@@ -128,7 +128,8 @@ export function MatchDbSync() {
         </button>
       )}
       <p className="mt-2 text-xs text-zinc-500">
-        Player and score records are stored locally in SQLite (see /records).
+        Live scoring is saved during the match; this step stores the final
+        result and pair stats in SQLite (see /records).
       </p>
     </div>
   );

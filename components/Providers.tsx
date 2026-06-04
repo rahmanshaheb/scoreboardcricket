@@ -1,5 +1,6 @@
 "use client";
 
+import { LiveScoreDbSync } from "@/components/LiveScoreDbSync";
 import { STORAGE_KEY, STORE_VERSION } from "@/lib/constants";
 import { useMatchStore } from "@/lib/store";
 import { useEffect } from "react";
@@ -11,7 +12,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const theme = useMatchStore((s) => s.theme);
 
   useEffect(() => {
+    const done = useMatchStore.persist.onFinishHydration(() => {
+      useMatchStore.getState().setHydrated(true);
+    });
     void useMatchStore.persist.rehydrate();
+    return done;
   }, []);
 
   useEffect(() => {
@@ -30,7 +35,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
           void useMatchStore.persist.rehydrate();
           return;
         }
-        useMatchStore.setState(parsed.state);
+        useMatchStore.setState((current) => ({
+          ...current,
+          ...parsed.state,
+        }));
       } catch {
         /* ignore corrupt payload */
       }
@@ -48,5 +56,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     }
   }, [theme]);
 
-  return <>{children}</>;
+  return (
+    <>
+      <LiveScoreDbSync />
+      {children}
+    </>
+  );
 }
