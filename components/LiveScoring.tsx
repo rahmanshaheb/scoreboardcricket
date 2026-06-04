@@ -148,6 +148,8 @@ export function LiveScoring() {
   const undo = useMatchStore((s) => s.undo);
   const swapStrikerManually = useMatchStore((s) => s.swapStrikerManually);
   const endInningsManually = useMatchStore((s) => s.endInningsManually);
+  const scoringLocked = useMatchStore((s) => s.scoringLocked);
+  const matchSessionIdForLink = useMatchStore((s) => s.matchSessionId);
 
   useEffect(() => {
     if (!config || !live) return;
@@ -171,6 +173,7 @@ export function LiveScoring() {
   const remaining = remainingBatters(battingRoster, live);
 
   const canDeliver =
+    !scoringLocked &&
     !live.awaitingNextPairSelection &&
     !live.awaitingBowlerSelection &&
     live.currentPairNumber <= 5 &&
@@ -179,7 +182,7 @@ export function LiveScoring() {
     live.legalBalls < maxLegalBalls(config.maxOvers);
 
   const canLegalDelivery =
-    canDeliver && Boolean(live.currentBowlerPlayerId);
+    canDeliver && Boolean(live.currentBowlerPlayerId) && !scoringLocked;
 
   const bowlSide = bowlingSide(live.battingSide);
   const bowlingRoster = bowlSide === "a" ? config.teamA : config.teamB;
@@ -216,8 +219,37 @@ export function LiveScoring() {
     else scoreNoBall(additional);
   };
 
+  const boardHref = matchSessionIdForLink
+    ? `/match/${matchSessionIdForLink}/scoreboard`
+    : "/scoreboard";
+
   return (
     <div className="space-y-3 pb-4">
+      {scoringLocked ? (
+        <div className="rounded-xl border border-amber-400/50 bg-amber-50 px-3 py-3 text-sm text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
+          <p className="font-bold">View only</p>
+          <p className="mt-1 text-xs leading-relaxed opacity-90">
+            Another device is scoring this match. Open the live scoreboard on
+            other screens, or score here after they stop (about 90 seconds
+            without updates).
+          </p>
+          <Link
+            href={boardHref}
+            className="mt-2 inline-block text-xs font-bold text-emerald-700 underline dark:text-emerald-300"
+          >
+            Open live scoreboard
+          </Link>
+        </div>
+      ) : (
+        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-center text-xs text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+          You are scoring — share the{" "}
+          <Link href={boardHref} className="font-bold underline">
+            live scoreboard link
+          </Link>{" "}
+          for other devices.
+        </p>
+      )}
+
       <BowlerSelectModal
         open={
           live.awaitingBowlerSelection && !live.awaitingNextPairSelection
@@ -273,7 +305,7 @@ export function LiveScoring() {
           aria-label="Bowler"
           className="min-h-11 rounded-xl border border-zinc-300 bg-white px-2 text-sm font-semibold dark:border-zinc-600 dark:bg-zinc-800"
           value={bowlerValue}
-          disabled={bowlerSelectLocked}
+          disabled={bowlerSelectLocked || scoringLocked}
           onChange={(e) =>
             setCurrentBowler(e.target.value ? e.target.value : null)
           }

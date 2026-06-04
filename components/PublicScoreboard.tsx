@@ -16,7 +16,9 @@ import {
   pairPlayerNamesFromIds,
   playerById,
 } from "@/lib/scoring";
+import type { MatchViewState } from "@/lib/match-view";
 import { useMatchStore } from "@/lib/store";
+import { useRemoteMatch } from "@/lib/use-remote-match";
 import type { LiveInnings, MatchConfig, Side } from "@/lib/types";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -189,14 +191,42 @@ function BowlerState({
   );
 }
 
-export function PublicScoreboard() {
+function useLocalMatchView(): MatchViewState & { ready: boolean } {
   const hydrated = useMatchStore((s) => s.hydrated);
-  const phase = useMatchStore((s) => s.phase);
-  const config = useMatchStore((s) => s.config);
-  const live = useMatchStore((s) => s.live);
-  const inningsNumber = useMatchStore((s) => s.inningsNumber);
-  const innings1Result = useMatchStore((s) => s.innings1Result);
-  const innings2Result = useMatchStore((s) => s.innings2Result);
+  return {
+    ready: hydrated,
+    phase: useMatchStore((s) => s.phase),
+    config: useMatchStore((s) => s.config),
+    inningsNumber: useMatchStore((s) => s.inningsNumber),
+    innings1Result: useMatchStore((s) => s.innings1Result),
+    live: useMatchStore((s) => s.live),
+    innings2Result: useMatchStore((s) => s.innings2Result),
+  };
+}
+
+type Props = {
+  /** Poll the server for this match (viewers / second devices). */
+  externalId?: string | null;
+};
+
+export function PublicScoreboard({ externalId = null }: Props) {
+  const local = useLocalMatchView();
+  const remote = useRemoteMatch(externalId);
+  const useRemote = Boolean(externalId);
+
+  const ready = useRemote ? !remote.loading : local.ready;
+  const phase = useRemote ? (remote.view?.phase ?? "home") : local.phase;
+  const config = useRemote ? (remote.view?.config ?? null) : local.config;
+  const live = useRemote ? (remote.view?.live ?? null) : local.live;
+  const inningsNumber = useRemote
+    ? (remote.view?.inningsNumber ?? 1)
+    : local.inningsNumber;
+  const innings1Result = useRemote
+    ? (remote.view?.innings1Result ?? null)
+    : local.innings1Result;
+  const innings2Result = useRemote
+    ? (remote.view?.innings2Result ?? null)
+    : local.innings2Result;
 
   const [fullscreen, setFullscreen] = useState(false);
 
@@ -226,10 +256,28 @@ export function PublicScoreboard() {
     innings2Result
   );
 
-  if (!hydrated) {
+  if (!ready) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-zinc-950 text-zinc-400">
         Loading…
+      </div>
+    );
+  }
+
+  if (useRemote && remote.notFound) {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-zinc-950 px-6 text-center text-zinc-100">
+        <h1 className="text-2xl font-bold">Live scoreboard</h1>
+        <p className="mt-4 text-lg text-zinc-400">Match not found</p>
+        <p className="mt-2 max-w-sm text-sm text-zinc-500">
+          Start scoring on one device, then open the share link from the scorer.
+        </p>
+        <Link
+          href="/"
+          className="mt-8 text-sm font-semibold text-emerald-400 underline"
+        >
+          Home
+        </Link>
       </div>
     );
   }
@@ -313,6 +361,11 @@ export function PublicScoreboard() {
         <div className="mx-auto flex max-w-2xl items-center justify-between gap-2 px-2">
           <span className="truncate text-sm font-bold text-emerald-400">
             {batName}
+            {useRemote && remote.updatedAt ? (
+              <span className="ml-2 text-[10px] font-normal text-zinc-500">
+                Live
+              </span>
+            ) : null}
           </span>
           <div className="flex gap-2">
             <button

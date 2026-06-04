@@ -11,6 +11,7 @@ import {
   STORE_VERSION,
 } from "@/lib/constants";
 import { newId } from "@/lib/id";
+import { releaseScorerOnServer } from "@/lib/release-scorer";
 import {
   makePlayers,
   SAMPLE_TEAM_A_NAMES,
@@ -96,6 +97,10 @@ function deepClone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x));
 }
 
+function canWriteScore(get: () => MatchStore): boolean {
+  return !get().scoringLocked;
+}
+
 function rosterFromSetup(s: SetupDraft, side: Side): TeamRoster {
   if (side === "a") {
     return {
@@ -149,6 +154,13 @@ export interface MatchStore {
   matchSessionId: string | null;
   /** After POST /api/matches succeeds for this session. */
   matchSavedToDb: boolean;
+  /** This device's token for exclusive scoring writes. */
+  scorerToken: string | null;
+  /** True when another device holds the scorer lock. */
+  scoringLocked: boolean;
+  setScoringLocked: (locked: boolean) => void;
+  /** Assign scorer token for resumed matches (before first sync). */
+  ensureScorerToken: () => void;
 
   /** Go to team setup from home */
   beginNewMatch: () => void;
@@ -226,6 +238,13 @@ export const useMatchStore = create<MatchStore>()(
       undoStack: [],
       matchSessionId: null,
       matchSavedToDb: false,
+      scorerToken: null,
+      scoringLocked: false,
+
+      setScoringLocked: (locked) => set({ scoringLocked: locked }),
+
+      ensureScorerToken: () =>
+        set((s) => (s.scorerToken ? s : { scorerToken: newId() })),
 
       markMatchSavedToDb: () => set({ matchSavedToDb: true }),
 
@@ -254,6 +273,8 @@ export const useMatchStore = create<MatchStore>()(
           undoStack: [],
           matchSessionId: null,
           matchSavedToDb: false,
+          scorerToken: null,
+          scoringLocked: false,
         });
       },
 
@@ -363,6 +384,8 @@ export const useMatchStore = create<MatchStore>()(
           undoStack: [],
           matchSessionId: newId(),
           matchSavedToDb: false,
+          scorerToken: newId(),
+          scoringLocked: false,
         });
         return null;
       },
@@ -401,6 +424,7 @@ export const useMatchStore = create<MatchStore>()(
       },
 
       scoreRuns: (n) => {
+        if (!canWriteScore(get)) return;
         const { live, config, inningsNumber, pushUndo, afterLiveUpdate } = get();
         if (!live || !config) return;
         if (live.awaitingNextPairSelection || live.awaitingBowlerSelection) return;
@@ -415,6 +439,7 @@ export const useMatchStore = create<MatchStore>()(
       },
 
       scoreWide: (additionalRuns) => {
+        if (!canWriteScore(get)) return;
         const { live, config, inningsNumber, pushUndo, afterLiveUpdate } = get();
         if (!live || !config) return;
         if (live.awaitingNextPairSelection || live.awaitingBowlerSelection) return;
@@ -429,6 +454,7 @@ export const useMatchStore = create<MatchStore>()(
       },
 
       scoreNoBall: (batRuns) => {
+        if (!canWriteScore(get)) return;
         const { live, config, inningsNumber, pushUndo, afterLiveUpdate } = get();
         if (!live || !config) return;
         if (live.awaitingNextPairSelection || live.awaitingBowlerSelection) return;
@@ -443,6 +469,7 @@ export const useMatchStore = create<MatchStore>()(
       },
 
       scoreWicketWithDetail: (detail) => {
+        if (!canWriteScore(get)) return;
         const { live, config, inningsNumber, pushUndo, afterLiveUpdate } = get();
         if (!live || !config) return;
         if (live.awaitingNextPairSelection || live.awaitingBowlerSelection) return;
@@ -456,6 +483,7 @@ export const useMatchStore = create<MatchStore>()(
       },
 
       scoreExtraWicketWithDetail: (extraType, detail) => {
+        if (!canWriteScore(get)) return;
         const { live, config, inningsNumber, pushUndo, afterLiveUpdate } = get();
         if (!live || !config) return;
         if (live.awaitingNextPairSelection || live.awaitingBowlerSelection) return;
@@ -475,6 +503,7 @@ export const useMatchStore = create<MatchStore>()(
       },
 
       swapStrikerManually: () => {
+        if (!canWriteScore(get)) return;
         const { live, pushUndo } = get();
         if (!live) return;
         if (live.awaitingNextPairSelection || live.awaitingBowlerSelection) return;
@@ -485,7 +514,8 @@ export const useMatchStore = create<MatchStore>()(
         set({ live: { ...live, strikerIsFirst: !live.strikerIsFirst } });
       },
 
-      setCurrentBowler: (playerId) =>
+      setCurrentBowler: (playerId) => {
+        if (!canWriteScore(get)) return;
         set((s) => {
           if (!s.live) return s;
           const live = s.live;
@@ -505,9 +535,11 @@ export const useMatchStore = create<MatchStore>()(
           return {
             live: { ...live, currentBowlerPlayerId: playerId },
           };
-        }),
+        });
+      },
 
       submitNextOverBowler: (bowlerId) => {
+        if (!canWriteScore(get)) return "Scoring is locked.";
         const { live, config, inningsNumber, pushUndo, afterLiveUpdate } =
           get();
         if (!live || !config) return "No live match.";
@@ -531,6 +563,7 @@ export const useMatchStore = create<MatchStore>()(
       },
 
       scoreEndOver: () => {
+        if (!canWriteScore(get)) return;
         const { live, config, inningsNumber, pushUndo, afterLiveUpdate } = get();
         if (!live || !config) return;
         if (live.awaitingNextPairSelection || live.awaitingBowlerSelection) return;
@@ -544,6 +577,7 @@ export const useMatchStore = create<MatchStore>()(
       },
 
       submitNextPairSelection: (playerIds) => {
+        if (!canWriteScore(get)) return "Scoring is locked.";
         const { live, config, inningsNumber, pushUndo, afterLiveUpdate } = get();
         if (!live || !config) return "No live match.";
         if (!live.awaitingNextPairSelection)
@@ -568,6 +602,7 @@ export const useMatchStore = create<MatchStore>()(
       },
 
       endInningsManually: () => {
+        if (!canWriteScore(get)) return;
         const { live, config, inningsNumber, pushUndo } = get();
         if (!live || !config) return;
         pushUndo();
@@ -626,6 +661,8 @@ export const useMatchStore = create<MatchStore>()(
       },
 
       goHome: () => {
+        const { matchSessionId, scorerToken } = get();
+        releaseScorerOnServer(matchSessionId, scorerToken);
         set({
           phase: "home",
           config: null,
@@ -637,6 +674,8 @@ export const useMatchStore = create<MatchStore>()(
           undoStack: [],
           matchSessionId: null,
           matchSavedToDb: false,
+          scorerToken: null,
+          scoringLocked: false,
         });
       },
 
@@ -661,6 +700,7 @@ export const useMatchStore = create<MatchStore>()(
         undoStack: s.undoStack,
         matchSessionId: s.matchSessionId,
         matchSavedToDb: s.matchSavedToDb,
+        scorerToken: s.scorerToken,
       }),
       migrate: (persisted: unknown, fromVersion: number) => {
         const p = persisted as Record<string, unknown>;

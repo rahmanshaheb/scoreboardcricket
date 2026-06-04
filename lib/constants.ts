@@ -25,3 +25,9 @@ export const MAX_UNDO = 40;
 /** localStorage key + schema version for migrations. */
 export const STORAGE_KEY = "scoreboard-pair-cricket-v1";
 export const STORE_VERSION = 4;
+
+/** Scorer lock expires if no sync within this window (ms). */
+export const SCORER_LOCK_MS = 90_000;
+
+/** Scoreboard poll interval (ms). */
+export const LIVE_MATCH_POLL_MS = 2_000;
