@@ -5,6 +5,7 @@ import {
   releaseScorerLock,
   saveLiveMatchSnapshot,
 } from "@/lib/db/save-live-match";
+import { getMatchSnapshotRow } from "@/lib/db/get-match-snapshot";
 import { NextResponse } from "next/server";
 
 /** Upsert in-progress match state (scorer device only). */
@@ -82,7 +83,7 @@ export async function GET(request: Request) {
         { status: 400 }
       );
     }
-    const row = await getLiveMatchSnapshot(externalId.trim());
+    const row = await getMatchSnapshotRow(externalId.trim());
     if (!row) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

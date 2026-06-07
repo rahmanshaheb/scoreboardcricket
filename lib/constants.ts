@@ -20,7 +20,7 @@ export const WICKET_PENALTY = 5;
 export const TIMELINE_VISIBLE = 12;
 
 /** Undo stack cap (also limits localStorage size). */
-export const MAX_UNDO = 40;
+export const MAX_UNDO = 120;
 
 /** localStorage key + schema version for migrations. */
 export const STORAGE_KEY = "scoreboard-pair-cricket-v1";
@@ -31,3 +31,8 @@ export const SCORER_LOCK_MS = 90_000;
 
 /** Scoreboard poll interval (ms). */
 export const LIVE_MATCH_POLL_MS = 2_000;
+
+/** Recent deliveries shown in the scoring header. */
+export const LAST_BALLS_VISIBLE = 12;
+
+export const RUNS_PAD = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;

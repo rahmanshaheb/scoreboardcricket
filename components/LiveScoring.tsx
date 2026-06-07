@@ -1,13 +1,16 @@
 "use client";
 
 import {
-  LEGAL_BALLS_PER_PAIR_BLOCK,
+  LAST_BALLS_VISIBLE,
   OVERS_PER_PAIR_BLOCK,
+  RUNS_PAD,
   TIMELINE_VISIBLE,
 } from "@/lib/constants";
+import { BallEditSheet } from "@/components/BallEditSheet";
 import { BowlerSelectModal } from "@/components/BowlerSelectModal";
 import { QuickOutSheet, type QuickOutMode } from "@/components/QuickOutSheet";
 import { SelectNextPairModal } from "@/components/SelectNextPairModal";
+import { lastDeliveryEvents } from "@/lib/ball-history";
 import { timelineCompactLabel } from "@/lib/event-label";
 import {
   bowlingSide,
@@ -20,11 +23,10 @@ import {
 import { formatWicketShort } from "@/lib/wicket-format";
 import { validateWicketDetail } from "@/lib/wicket-validate";
 import { useMatchStore } from "@/lib/store";
-import type { LiveInnings, MatchConfig } from "@/lib/types";
+import type { BallEvent, LiveInnings, MatchConfig } from "@/lib/types";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-const RUNS_PAD = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 const EXTRA_RUNS_PAD = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
 const padBtn =
@@ -33,28 +35,88 @@ const runBtn = `${padBtn} bg-zinc-900 text-white dark:bg-emerald-700`;
 const extraBtn = `${padBtn} border-2 border-violet-400 bg-violet-50 text-violet-950 dark:border-violet-600 dark:bg-violet-950/60 dark:text-violet-100`;
 const outBtn = `${padBtn} border-2 border-red-400 bg-red-50 text-sm text-red-900 dark:border-red-700 dark:bg-red-950/50 dark:text-red-100`;
 
+function ballChipClass(kind: BallEvent["kind"]): string {
+  switch (kind) {
+    case "wicket":
+      return "border-red-500/60 bg-red-950/50 text-red-200";
+    case "wide":
+      return "border-violet-500/60 bg-violet-950/50 text-violet-200";
+    case "no_ball":
+      return "border-orange-500/60 bg-orange-950/50 text-orange-200";
+    case "end_over":
+      return "border-zinc-500/60 bg-zinc-800 text-zinc-300";
+    default:
+      return "border-zinc-600 bg-zinc-900 text-zinc-100";
+  }
+}
+
+function LastSixBalls({
+  events,
+  disabled,
+  onSelect,
+}: {
+  events: BallEvent[];
+  disabled: boolean;
+  onSelect: (e: BallEvent) => void;
+}) {
+  const balls = lastDeliveryEvents(events, LAST_BALLS_VISIBLE);
+  const pad = LAST_BALLS_VISIBLE - balls.length;
+  const slots: (BallEvent | null)[] = [
+    ...Array(Math.max(0, pad)).fill(null),
+    ...balls,
+  ];
+
+  return (
+    <div className="mt-1.5 grid grid-cols-12 gap-0.5">
+      {slots.map((e, i) =>
+        e ? (
+          <button
+            key={e.id}
+            type="button"
+            disabled={disabled}
+            onClick={() => onSelect(e)}
+            className={`flex h-7 min-w-0 items-center justify-center rounded-md border px-0.5 text-[10px] font-bold tabular-nums leading-none active:scale-95 disabled:opacity-40 ${ballChipClass(e.kind)}`}
+            aria-label={`Edit ${timelineCompactLabel(e)}`}
+          >
+            {timelineCompactLabel(e)}
+          </button>
+        ) : (
+          <div
+            key={`empty-${i}`}
+            className="h-7 rounded-md border border-dashed border-zinc-300/60 dark:border-zinc-700/60"
+            aria-hidden
+          />
+        )
+      )}
+    </div>
+  );
+}
+
 function CompactHeader({
   config,
   live,
   inningsNumber,
   firstInningsRuns,
+  scoringLocked,
+  onEditBall,
 }: {
   config: MatchConfig;
   live: LiveInnings;
   inningsNumber: 1 | 2;
   firstInningsRuns: number | null;
+  scoringLocked: boolean;
+  onEditBall: (e: BallEvent) => void;
 }) {
   const bat = live.battingSide;
   const batName = bat === "a" ? config.teamA.name : config.teamB.name;
   const roster = bat === "a" ? config.teamA : config.teamB;
-  const cap = maxLegalBalls(config.maxOvers);
   const [p1, p2] = pairPlayerNamesFromIds(roster, live.currentPairPlayerIds);
   const striker = live.strikerIsFirst ? p1 : p2;
 
   return (
     <div className="sticky top-14 z-30 -mx-4 border-b border-zinc-200 bg-zinc-50/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-semibold text-emerald-700 dark:text-emerald-400">
             Inn {inningsNumber} · {batName}
           </p>
@@ -65,19 +127,31 @@ function CompactHeader({
                 ? "Pick bowler"
                 : `Pair ${live.currentPairNumber}/5 · ${striker}*`}
           </p>
+          {!live.awaitingNextPairSelection &&
+            live.currentPairNumber <= 5 &&
+            p1 !== "—" && (
+              <p className="mt-1 text-xs tabular-nums text-zinc-500">
+                {live.currentPairRuns}r · {oversFormat(live.pairBlockLegalBalls)}/
+                {OVERS_PER_PAIR_BLOCK}ov
+              </p>
+            )}
         </div>
         <div className="shrink-0 text-right">
-          <p className="text-3xl font-black tabular-nums leading-none">
-            {live.runs}
-            <span className="text-lg font-bold text-zinc-400">
-              /{live.wicketEvents}
-            </span>
-          </p>
-          <p className="mt-1 text-xs tabular-nums text-zinc-500">
-            {oversFormat(live.legalBalls)} · {cap - live.legalBalls} left
-          </p>
+          <div className="flex items-baseline justify-end gap-2">
+            <p className="text-lg font-bold tabular-nums text-zinc-500">
+              {oversFormat(live.legalBalls)}
+            </p>
+            <p className="text-3xl font-black tabular-nums leading-none">
+              {live.runs}
+            </p>
+          </div>
         </div>
       </div>
+      <LastSixBalls
+        events={live.events}
+        disabled={scoringLocked}
+        onSelect={onEditBall}
+      />
       {inningsNumber === 2 && firstInningsRuns !== null && (
         <p className="mt-2 text-center text-xs font-semibold text-amber-800 dark:text-amber-300">
           Need {firstInningsRuns + 1} to win
@@ -88,15 +162,6 @@ function CompactHeader({
           Over done — choose next bowler
         </p>
       )}
-      {!live.awaitingNextPairSelection &&
-        live.currentPairNumber <= 5 &&
-        p1 !== "—" && (
-          <p className="mt-2 text-center text-xs tabular-nums text-zinc-500">
-            Pair: {live.currentPairRuns}r · {oversFormat(live.pairBlockLegalBalls)}/
-            {OVERS_PER_PAIR_BLOCK}ov ({live.pairBlockLegalBalls}/
-            {LEGAL_BALLS_PER_PAIR_BLOCK}b)
-          </p>
-        )}
     </div>
   );
 }
@@ -124,6 +189,8 @@ export function LiveScoring() {
   const [pairModalError, setPairModalError] = useState<string | null>(null);
   const [bowlerModalError, setBowlerModalError] = useState<string | null>(null);
   const [showMore, setShowMore] = useState(false);
+  const [editBall, setEditBall] = useState<BallEvent | null>(null);
+  const [editBallError, setEditBallError] = useState<string | null>(null);
 
   const config = useMatchStore((s) => s.config);
   const live = useMatchStore((s) => s.live);
@@ -146,6 +213,7 @@ export function LiveScoring() {
     (s) => s.submitNextPairSelection
   );
   const undo = useMatchStore((s) => s.undo);
+  const editDeliveryAtEvent = useMatchStore((s) => s.editDeliveryAtEvent);
   const swapStrikerManually = useMatchStore((s) => s.swapStrikerManually);
   const endInningsManually = useMatchStore((s) => s.endInningsManually);
   const scoringLocked = useMatchStore((s) => s.scoringLocked);
@@ -285,11 +353,38 @@ export function LiveScoring() {
         onSubmit={submitQuickOut}
       />
 
+      <BallEditSheet
+        open={editBall != null}
+        event={editBall}
+        onClose={() => {
+          setEditBall(null);
+          setEditBallError(null);
+        }}
+        onApply={(edit) => {
+          if (!editBall) return;
+          const ok = editDeliveryAtEvent(editBall.id, edit);
+          if (!ok) {
+            setEditBallError("Could not edit that ball.");
+            return;
+          }
+          setEditBall(null);
+          setEditBallError(null);
+        }}
+      />
+
+      {editBallError && (
+        <p className="mb-2 rounded-lg bg-red-100 px-3 py-2 text-center text-xs font-semibold text-red-900 dark:bg-red-950/50 dark:text-red-200">
+          {editBallError}
+        </p>
+      )}
+
       <CompactHeader
         config={config}
         live={live}
         inningsNumber={inningsNumber}
         firstInningsRuns={firstRuns}
+        scoringLocked={scoringLocked}
+        onEditBall={setEditBall}
       />
 
       <div className="grid grid-cols-2 gap-1.5">

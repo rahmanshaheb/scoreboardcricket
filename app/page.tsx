@@ -46,6 +46,13 @@ export default function HomePage() {
           )}
 
           <Link
+            href="/matches"
+            className="flex h-12 items-center justify-center rounded-2xl border border-zinc-300 bg-white text-sm font-bold text-zinc-800 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+          >
+            All matches
+          </Link>
+
+          <Link
             href="/scoreboard"
             className="flex h-12 items-center justify-center rounded-2xl border border-zinc-300 bg-white text-sm font-bold text-zinc-800 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
           >

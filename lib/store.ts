@@ -19,6 +19,18 @@ import {
 } from "@/lib/sample-data";
 import { upgradeLiveInningsV2ToV3 } from "@/lib/migrate-innings-v3";
 import { upgradeLiveInningsV3ToV4 } from "@/lib/migrate-innings-v4";
+import type { DeliveryEdit } from "@/lib/delivery-edit";
+import type { MatchDbSnapshot } from "@/lib/db/match-snapshot";
+import {
+  replayInningsBeforeEvent,
+  replayWithEditedDelivery,
+  synthesizeAtInnings,
+} from "@/lib/replay-innings";
+import {
+  findUndoIndexBeforeEvent,
+  firstNewDeliveryEvent,
+  pruneDeliveryRewindFrames,
+} from "@/lib/rewind";
 import {
   addNoBall,
   addExtraWicket,
@@ -150,6 +162,8 @@ export interface MatchStore {
   innings2Result: LiveInnings | null;
   setup: SetupDraft;
   undoStack: UndoFrame[];
+  /** Snapshot before each delivery (fallback when undo stack is trimmed). */
+  deliveryRewindFrames: Record<string, UndoFrame>;
   /** Stable id for this match (DB idempotency). */
   matchSessionId: string | null;
   /** After POST /api/matches succeeds for this session. */
@@ -188,9 +202,17 @@ export interface MatchStore {
   /** After 4 overs on pairs 1–4; `playerIds` must be unused batters */
   submitNextPairSelection: (playerIds: [string, string]) => string | null;
   undo: () => void;
+  /** Remove this delivery and all later ones (undo stack must align). */
+  rewindToBeforeEvent: (eventId: string) => boolean;
+  /** Change a delivery in place; later balls are kept and totals recomputed. */
+  editDeliveryAtEvent: (eventId: string, edit: DeliveryEdit) => boolean;
+  /** @deprecated use editDeliveryAtEvent */
+  replaceRunsAtEvent: (eventId: string, runs: number) => boolean;
   endInningsManually: () => void;
 
   startSecondInnings: () => void;
+  /** Load match from DB snapshot (matches library resume). */
+  loadFromSnapshot: (snapshot: MatchDbSnapshot, opts?: { forEdit?: boolean }) => void;
   goHome: () => void;
   resetAll: () => void;
 
@@ -200,7 +222,53 @@ export interface MatchStore {
   ensureMatchSessionForArchive: () => void;
 
   pushUndo: () => void;
-  afterLiveUpdate: (next: LiveInnings) => void;
+  afterLiveUpdate: (next: LiveInnings, prevLive?: LiveInnings) => void;
+}
+
+function captureDeliveryRewind(
+  frames: Record<string, UndoFrame>,
+  undoStack: UndoFrame[],
+  prevLive: LiveInnings,
+  next: LiveInnings
+): Record<string, UndoFrame> {
+  const frame = undoStack[undoStack.length - 1];
+  const delivery = firstNewDeliveryEvent(prevLive, next);
+  if (!frame || !delivery) {
+    return pruneDeliveryRewindFrames(frames, next.events);
+  }
+  return pruneDeliveryRewindFrames(
+    { ...frames, [delivery.id]: frame },
+    next.events
+  );
+}
+
+function restoreFromUndoFrame(
+  frame: UndoFrame,
+  undoStack: UndoFrame[],
+  frameIdx: number,
+  deliveryRewindFrames: Record<string, UndoFrame>
+) {
+  const live = frame.live ? deepClone(frame.live) : null;
+  return {
+    phase: frame.phase,
+    config: frame.config ? deepClone(frame.config) : null,
+    inningsNumber: frame.inningsNumber,
+    innings1Result: frame.innings1Result
+      ? deepClone(frame.innings1Result)
+      : null,
+    live,
+    innings2Result: frame.innings2Result
+      ? deepClone(frame.innings2Result)
+      : null,
+    setup: deepClone(frame.setup),
+    undoStack: frameIdx >= 0 ? undoStack.slice(0, frameIdx) : [],
+    deliveryRewindFrames: pruneDeliveryRewindFrames(
+      deliveryRewindFrames,
+      live?.events ?? []
+    ),
+    matchSessionId: frame.matchSessionId ?? null,
+    matchSavedToDb: frame.matchSavedToDb ?? false,
+  };
 }
 
 function frameFromStore(s: MatchStore): UndoFrame {
@@ -236,6 +304,7 @@ export const useMatchStore = create<MatchStore>()(
       innings2Result: null,
       setup: initialSetup(),
       undoStack: [],
+      deliveryRewindFrames: {},
       matchSessionId: null,
       matchSavedToDb: false,
       scorerToken: null,
@@ -271,6 +340,7 @@ export const useMatchStore = create<MatchStore>()(
           innings2Result: null,
           setup: initialSetup(),
           undoStack: [],
+          deliveryRewindFrames: {},
           matchSessionId: null,
           matchSavedToDb: false,
           scorerToken: null,
@@ -289,6 +359,7 @@ export const useMatchStore = create<MatchStore>()(
           live: null,
           innings2Result: null,
           undoStack: [],
+          deliveryRewindFrames: {},
           matchSessionId: null,
           matchSavedToDb: false,
           setup: {
@@ -382,6 +453,7 @@ export const useMatchStore = create<MatchStore>()(
           live,
           setup: draft,
           undoStack: [],
+          deliveryRewindFrames: {},
           matchSessionId: newId(),
           matchSavedToDb: false,
           scorerToken: newId(),
@@ -390,11 +462,10 @@ export const useMatchStore = create<MatchStore>()(
         return null;
       },
 
-      afterLiveUpdate: (next) => {
+      afterLiveUpdate: (next, prevLive) => {
         const { config, inningsNumber } = get();
         if (!config) return;
         let out = next;
-        const cap = maxLegalBalls(config.maxOvers);
         const wouldComplete = isInningsComplete(out, config.maxOvers);
         if (
           wouldComplete &&
@@ -406,20 +477,32 @@ export const useMatchStore = create<MatchStore>()(
         }
         if (isInningsComplete(out, config.maxOvers)) {
           if (inningsNumber === 1) {
-            set({
+            set((s) => ({
               innings1Result: deepClone(out),
               live: null,
               phase: "innings_break",
-            });
+              deliveryRewindFrames: {},
+            }));
           } else {
-            set({
+            set((s) => ({
               innings2Result: deepClone(out),
               live: null,
               phase: "summary",
-            });
+              deliveryRewindFrames: {},
+            }));
           }
         } else {
-          set({ live: out });
+          set((s) => ({
+            live: out,
+            deliveryRewindFrames: prevLive
+              ? captureDeliveryRewind(
+                  s.deliveryRewindFrames,
+                  s.undoStack,
+                  prevLive,
+                  out
+                )
+              : s.deliveryRewindFrames,
+          }));
         }
       },
 
@@ -433,9 +516,10 @@ export const useMatchStore = create<MatchStore>()(
         if (live.currentPairNumber > 5) return;
         if (live.legalBalls >= maxLegalBalls(config.maxOvers)) return;
         if (!live.currentBowlerPlayerId) return;
+        const prevLive = live;
         pushUndo();
         const next = addRuns(live, inningsNumber, n);
-        afterLiveUpdate(next);
+        afterLiveUpdate(next, prevLive);
       },
 
       scoreWide: (additionalRuns) => {
@@ -448,9 +532,10 @@ export const useMatchStore = create<MatchStore>()(
         if (live.currentPairNumber > 5) return;
         if (live.legalBalls >= maxLegalBalls(config.maxOvers)) return;
         if (!live.currentBowlerPlayerId) return;
+        const prevLive = live;
         pushUndo();
         const next = addWide(live, inningsNumber, additionalRuns);
-        afterLiveUpdate(next);
+        afterLiveUpdate(next, prevLive);
       },
 
       scoreNoBall: (batRuns) => {
@@ -463,9 +548,10 @@ export const useMatchStore = create<MatchStore>()(
         if (live.currentPairNumber > 5) return;
         if (live.legalBalls >= maxLegalBalls(config.maxOvers)) return;
         if (!live.currentBowlerPlayerId) return;
+        const prevLive = live;
         pushUndo();
         const next = addNoBall(live, inningsNumber, batRuns);
-        afterLiveUpdate(next);
+        afterLiveUpdate(next, prevLive);
       },
 
       scoreWicketWithDetail: (detail) => {
@@ -477,9 +563,10 @@ export const useMatchStore = create<MatchStore>()(
           return;
         if (live.currentPairNumber > 5) return;
         if (live.legalBalls >= maxLegalBalls(config.maxOvers)) return;
+        const prevLive = live;
         pushUndo();
         const next = addWicket(live, inningsNumber, config, detail);
-        afterLiveUpdate(next);
+        afterLiveUpdate(next, prevLive);
       },
 
       scoreExtraWicketWithDetail: (extraType, detail) => {
@@ -491,6 +578,7 @@ export const useMatchStore = create<MatchStore>()(
           return;
         if (live.currentPairNumber > 5) return;
         if (live.legalBalls >= maxLegalBalls(config.maxOvers)) return;
+        const prevLive = live;
         pushUndo();
         const next = addExtraWicket(
           live,
@@ -499,7 +587,7 @@ export const useMatchStore = create<MatchStore>()(
           extraType,
           detail
         );
-        afterLiveUpdate(next);
+        afterLiveUpdate(next, prevLive);
       },
 
       swapStrikerManually: () => {
@@ -558,7 +646,7 @@ export const useMatchStore = create<MatchStore>()(
         }
         pushUndo();
         const next = confirmBowlerForNextOver(live, bowlerId);
-        afterLiveUpdate(next);
+        afterLiveUpdate(next, live);
         return null;
       },
 
@@ -571,9 +659,10 @@ export const useMatchStore = create<MatchStore>()(
           return;
         if (live.currentPairNumber > 5) return;
         if (!live.currentBowlerPlayerId) return;
+        const prevLive = live;
         pushUndo();
         const next = endOver(live, inningsNumber);
-        afterLiveUpdate(next);
+        afterLiveUpdate(next, prevLive);
       },
 
       submitNextPairSelection: (playerIds) => {
@@ -624,22 +713,101 @@ export const useMatchStore = create<MatchStore>()(
       },
 
       undo: () => {
-        const { undoStack } = get();
+        const { undoStack, deliveryRewindFrames } = get();
         if (undoStack.length === 0) return;
         const last = undoStack[undoStack.length - 1];
         const rest = undoStack.slice(0, -1);
+        const restoredLive = last.live ? deepClone(last.live) : null;
         set({
           phase: last.phase,
           config: last.config,
           inningsNumber: last.inningsNumber,
-          innings1Result: last.innings1Result,
-          live: last.live,
-          innings2Result: last.innings2Result,
-          setup: last.setup,
+          innings1Result: last.innings1Result
+            ? deepClone(last.innings1Result)
+            : null,
+          live: restoredLive,
+          innings2Result: last.innings2Result
+            ? deepClone(last.innings2Result)
+            : null,
+          setup: deepClone(last.setup),
           undoStack: rest,
+          deliveryRewindFrames: pruneDeliveryRewindFrames(
+            deliveryRewindFrames,
+            restoredLive?.events ?? []
+          ),
           matchSessionId: last.matchSessionId ?? null,
           matchSavedToDb: last.matchSavedToDb ?? false,
         });
+      },
+
+      rewindToBeforeEvent: (eventId) => {
+        if (!canWriteScore(get)) return false;
+        const { live, undoStack, deliveryRewindFrames } = get();
+        if (!live) return false;
+        if (!live.events.some((e) => e.id === eventId)) return false;
+
+        const frameIdx = findUndoIndexBeforeEvent(undoStack, live, eventId);
+        const frame =
+          frameIdx >= 0
+            ? undoStack[frameIdx]
+            : deliveryRewindFrames[eventId];
+        if (!frame) return false;
+
+        set({
+          ...restoreFromUndoFrame(
+            frame,
+            undoStack,
+            frameIdx,
+            deliveryRewindFrames
+          ),
+          matchSessionId: frame.matchSessionId ?? get().matchSessionId,
+          matchSavedToDb: frame.matchSavedToDb ?? get().matchSavedToDb,
+        });
+        return true;
+      },
+
+      replaceRunsAtEvent: (eventId, runs) =>
+        get().editDeliveryAtEvent(eventId, { kind: "runs", runs }),
+
+      editDeliveryAtEvent: (eventId, edit) => {
+        if (!canWriteScore(get)) return false;
+        const { live, config, inningsNumber, pushUndo, afterLiveUpdate } = get();
+        if (!live || !config) return false;
+        const original = live.events.find((e) => e.id === eventId);
+        if (!original) return false;
+        if (original.kind === "next_pair" || original.kind === "end_over") {
+          return false;
+        }
+
+        const innAt = replayInningsBeforeEvent(
+          config,
+          inningsNumber,
+          live,
+          eventId
+        );
+        if (!innAt) return false;
+
+        const replacement = synthesizeAtInnings(
+          innAt,
+          config,
+          inningsNumber,
+          original,
+          edit
+        );
+        if (!replacement) return false;
+
+        const replayed = replayWithEditedDelivery(
+          config,
+          inningsNumber,
+          live,
+          eventId,
+          replacement
+        );
+        if (!replayed) return false;
+
+        pushUndo();
+        afterLiveUpdate(replayed);
+        return true;
       },
 
       startSecondInnings: () => {
@@ -657,6 +825,64 @@ export const useMatchStore = create<MatchStore>()(
           inningsNumber: 2,
           live,
           undoStack: [],
+          deliveryRewindFrames: {},
+        });
+      },
+
+      loadFromSnapshot: (snapshot, opts) => {
+        const { matchSessionId, scorerToken } = get();
+        if (
+          matchSessionId &&
+          scorerToken &&
+          matchSessionId !== snapshot.matchSessionId
+        ) {
+          releaseScorerOnServer(matchSessionId, scorerToken);
+        }
+
+        const forEdit =
+          opts?.forEdit &&
+          snapshot.phase === "summary" &&
+          snapshot.innings2Result != null;
+
+        if (forEdit) {
+          set({
+            phase: "live",
+            config: deepClone(snapshot.config),
+            inningsNumber: 2,
+            innings1Result: snapshot.innings1Result
+              ? deepClone(snapshot.innings1Result)
+              : null,
+            live: deepClone(snapshot.innings2Result!),
+            innings2Result: null,
+            matchSessionId: snapshot.matchSessionId,
+            undoStack: [],
+            deliveryRewindFrames: {},
+            scorerToken: newId(),
+            scoringLocked: false,
+            matchSavedToDb: true,
+            setup: initialSetup(),
+          });
+          return;
+        }
+
+        set({
+          phase: snapshot.phase,
+          config: deepClone(snapshot.config),
+          inningsNumber: snapshot.inningsNumber,
+          innings1Result: snapshot.innings1Result
+            ? deepClone(snapshot.innings1Result)
+            : null,
+          live: snapshot.live ? deepClone(snapshot.live) : null,
+          innings2Result: snapshot.innings2Result
+            ? deepClone(snapshot.innings2Result)
+            : null,
+          matchSessionId: snapshot.matchSessionId,
+          undoStack: [],
+          deliveryRewindFrames: {},
+          scorerToken: newId(),
+          scoringLocked: false,
+          matchSavedToDb: snapshot.phase === "summary",
+          setup: initialSetup(),
         });
       },
 
@@ -672,6 +898,7 @@ export const useMatchStore = create<MatchStore>()(
           innings2Result: null,
           setup: initialSetup(),
           undoStack: [],
+          deliveryRewindFrames: {},
           matchSessionId: null,
           matchSavedToDb: false,
           scorerToken: null,
@@ -704,6 +931,7 @@ export const useMatchStore = create<MatchStore>()(
       }),
       migrate: (persisted: unknown, fromVersion: number) => {
         const p = persisted as Record<string, unknown>;
+        delete p.deliveryRewindFrames;
         if (fromVersion < 2) {
           p.matchSessionId = null;
           p.matchSavedToDb = false;

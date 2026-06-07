@@ -1,4 +1,127 @@
+import { parseSnapshotJson } from "@/lib/match-view";
+import type { AppPhase } from "@/lib/types";
+import { oversFormat } from "@/lib/scoring";
 import { prisma } from "@/lib/prisma";
+
+export type MatchLibraryItem = {
+  externalId: string;
+  teamAName: string;
+  teamBName: string;
+  statusLabel: string;
+  scoreSummary: string;
+  headline: string | null;
+  updatedAt: string;
+  hasSnapshot: boolean;
+  canShareScoreboard: boolean;
+  phase: AppPhase | null;
+};
+
+function scoreSummaryFromSnapshot(
+  snap: ReturnType<typeof parseSnapshotJson>
+): string {
+  if (!snap) return "—";
+  const parts: string[] = [];
+  if (snap.innings1Result) {
+    parts.push(
+      `${snap.innings1Result.runs} (${oversFormat(snap.innings1Result.legalBalls)} ov)`
+    );
+  }
+  const cur = snap.live ?? snap.innings2Result;
+  if (cur) {
+    parts.push(`${cur.runs} (${oversFormat(cur.legalBalls)} ov)`);
+  }
+  return parts.join(" · ") || "—";
+}
+
+function statusLabel(
+  sessionStatus: string,
+  phase: AppPhase | null | undefined
+): string {
+  if (sessionStatus === "completed" || phase === "summary") return "Finished";
+  if (phase === "innings_break") return "Innings break";
+  if (phase === "live") return "In progress";
+  return sessionStatus === "live" ? "In progress" : "Saved";
+}
+
+function inningsScoreSummary(
+  innings: { runs: number; legalBalls: number }[]
+): string {
+  return (
+    innings
+      .map((inn) => `${inn.runs} (${oversFormat(inn.legalBalls)} ov)`)
+      .join(" · ") || "—"
+  );
+}
+
+/** Live + finished matches for the library page (deduped by externalId). */
+export async function listMatchLibrary(
+  limit = 60
+): Promise<MatchLibraryItem[]> {
+  const [liveRows, finishedRows] = await Promise.all([
+    prisma.liveMatchSession.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: limit,
+    }),
+    prisma.match.findMany({
+      where: { externalId: { not: null } },
+      orderBy: { completedAt: "desc" },
+      take: limit,
+      include: {
+        innings: { orderBy: { inningsNumber: "asc" } },
+      },
+    }),
+  ]);
+
+  const map = new Map<string, MatchLibraryItem>();
+
+  for (const row of liveRows) {
+    const snap = parseSnapshotJson(row.stateJson);
+    map.set(row.externalId, {
+      externalId: row.externalId,
+      teamAName: row.teamAName,
+      teamBName: row.teamBName,
+      statusLabel: statusLabel(row.status, snap?.phase),
+      scoreSummary: scoreSummaryFromSnapshot(snap),
+      headline: null,
+      updatedAt: row.updatedAt.toISOString(),
+      hasSnapshot: snap != null,
+      canShareScoreboard: true,
+      phase: snap?.phase ?? null,
+    });
+  }
+
+  for (const m of finishedRows) {
+    if (!m.externalId) continue;
+    const existing = map.get(m.externalId);
+    if (existing) {
+      existing.headline = m.headline;
+      existing.statusLabel = "Finished";
+      existing.hasSnapshot = existing.hasSnapshot || m.innings.length >= 2;
+      existing.canShareScoreboard = true;
+      const completedIso = m.completedAt.toISOString();
+      if (completedIso > existing.updatedAt) {
+        existing.updatedAt = completedIso;
+      }
+      continue;
+    }
+    map.set(m.externalId, {
+      externalId: m.externalId,
+      teamAName: m.teamAName,
+      teamBName: m.teamBName,
+      statusLabel: "Finished",
+      scoreSummary: inningsScoreSummary(m.innings),
+      headline: m.headline,
+      updatedAt: m.completedAt.toISOString(),
+      hasSnapshot: m.innings.length >= 2,
+      canShareScoreboard: true,
+      phase: "summary",
+    });
+  }
+
+  return [...map.values()]
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, limit);
+}
 
 export async function listRecentMatches(limit = 40) {
   return prisma.match.findMany({
