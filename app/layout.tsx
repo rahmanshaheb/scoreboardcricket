@@ -9,8 +9,8 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Scoreboard — Pair Cricket",
-  description: "Mobile-friendly pair cricket scoring for local matches",
+  title: "Blacktown No Blowers — Scoreboard",
+  description: "Pair cricket scoring for Blacktown No Blowers — mobile-friendly sideline scoreboard",
 };
 
 export const viewport: Viewport = {

@@ -32,7 +32,7 @@ export function AppShell({
             href="/"
             className="shrink-0 text-sm font-semibold tracking-tight text-emerald-700 dark:text-emerald-400"
           >
-            Scoreboard
+            No Blowers
           </Link>
           {title ? (
             <span className="min-w-0 truncate text-center text-[10px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
