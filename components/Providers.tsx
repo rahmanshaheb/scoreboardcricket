@@ -12,11 +12,35 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const theme = useMatchStore((s) => s.theme);
 
   useEffect(() => {
-    const done = useMatchStore.persist.onFinishHydration(() => {
-      useMatchStore.getState().setHydrated(true);
-    });
-    void useMatchStore.persist.rehydrate();
-    return done;
+    let cancelled = false;
+
+    const finishHydration = () => {
+      if (!cancelled) useMatchStore.getState().setHydrated(true);
+    };
+
+    const unsub = useMatchStore.persist.onFinishHydration(finishHydration);
+
+    void (async () => {
+      try {
+        await useMatchStore.persist.rehydrate();
+      } catch {
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch {
+          /* ignore */
+        }
+      } finally {
+        finishHydration();
+      }
+    })();
+
+    const timeout = setTimeout(finishHydration, 800);
+
+    return () => {
+      cancelled = true;
+      unsub();
+      clearTimeout(timeout);
+    };
   }, []);
 
   useEffect(() => {

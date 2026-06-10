@@ -1018,7 +1018,10 @@ export const useMatchStore = create<MatchStore>()(
         return p;
       },
       onRehydrateStorage: () => (state, err) => {
-        if (!err) state?.setHydrated(true);
+        if (err) {
+          console.warn("Match store rehydrate failed:", err);
+        }
+        state?.setHydrated(true);
       },
       skipHydration: true,
     }
