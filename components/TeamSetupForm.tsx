@@ -1,6 +1,7 @@
 "use client";
 
 import { useMatchStore } from "@/lib/store";
+import type { Side } from "@/lib/types";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -62,8 +63,8 @@ function RadioGroup({
 }: {
   legend: string;
   name: string;
-  value: "a" | "b";
-  onChange: (side: "a" | "b") => void;
+  value: Side | null;
+  onChange: (side: Side) => void;
   labels: { a: string; b: string };
 }) {
   return (
