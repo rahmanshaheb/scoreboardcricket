@@ -22,11 +22,13 @@ function ScorerSetup() {
 
 export default function ScoringPage() {
   return (
-    <AppShell title="Scoring" showThemeToggle>
+    <AppShell title="Scoring" compact hideNav>
       <HydrationGate>
-        <PhaseRedirect allowed={PHASE_GUARD.live} />
-        <ScorerSetup />
-        <LiveScoring />
+        <div className="flex h-full min-h-0 flex-col">
+          <PhaseRedirect allowed={PHASE_GUARD.live} />
+          <ScorerSetup />
+          <LiveScoring />
+        </div>
       </HydrationGate>
     </AppShell>
   );

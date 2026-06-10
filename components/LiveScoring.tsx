@@ -30,10 +30,12 @@ import { useEffect, useState } from "react";
 const EXTRA_RUNS_PAD = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
 const padBtn =
-  "flex min-h-[3.25rem] items-center justify-center rounded-2xl text-lg font-bold shadow-sm active:scale-[0.97] disabled:opacity-40";
+  "flex h-9 items-center justify-center rounded-lg text-sm font-bold shadow-sm active:scale-[0.97] disabled:opacity-40";
 const runBtn = `${padBtn} bg-zinc-900 text-white dark:bg-emerald-700`;
-const extraBtn = `${padBtn} border-2 border-violet-400 bg-violet-50 text-violet-950 dark:border-violet-600 dark:bg-violet-950/60 dark:text-violet-100`;
-const outBtn = `${padBtn} border-2 border-red-400 bg-red-50 text-sm text-red-900 dark:border-red-700 dark:bg-red-950/50 dark:text-red-100`;
+const extraBtn = `${padBtn} border border-violet-400 bg-violet-50 text-violet-950 dark:border-violet-600 dark:bg-violet-950/60 dark:text-violet-100`;
+const outBtn = `${padBtn} border border-red-400 bg-red-50 text-[11px] text-red-900 dark:border-red-700 dark:bg-red-950/50 dark:text-red-100`;
+const actionBtn =
+  "h-8 rounded-lg border border-zinc-300 text-xs font-semibold disabled:opacity-40 dark:border-zinc-600";
 
 function ballChipClass(kind: BallEvent["kind"]): string {
   switch (kind) {
@@ -67,7 +69,7 @@ function LastSixBalls({
   ];
 
   return (
-    <div className="mt-1.5 grid grid-cols-12 gap-0.5">
+    <div className="mt-1 grid grid-cols-12 gap-0.5">
       {slots.map((e, i) =>
         e ? (
           <button
@@ -75,7 +77,7 @@ function LastSixBalls({
             type="button"
             disabled={disabled}
             onClick={() => onSelect(e)}
-            className={`flex h-7 min-w-0 items-center justify-center rounded-md border px-0.5 text-[10px] font-bold tabular-nums leading-none active:scale-95 disabled:opacity-40 ${ballChipClass(e.kind)}`}
+            className={`flex h-6 min-w-0 items-center justify-center rounded border px-0.5 text-[9px] font-bold tabular-nums leading-none active:scale-95 disabled:opacity-40 ${ballChipClass(e.kind)}`}
             aria-label={`Edit ${timelineCompactLabel(e)}`}
           >
             {timelineCompactLabel(e)}
@@ -83,7 +85,7 @@ function LastSixBalls({
         ) : (
           <div
             key={`empty-${i}`}
-            className="h-7 rounded-md border border-dashed border-zinc-300/60 dark:border-zinc-700/60"
+            className="h-6 rounded border border-dashed border-zinc-300/60 dark:border-zinc-700/60"
             aria-hidden
           />
         )
@@ -114,13 +116,13 @@ function CompactHeader({
   const striker = live.strikerIsFirst ? p1 : p2;
 
   return (
-    <div className="sticky top-14 z-30 -mx-4 border-b border-zinc-200 bg-zinc-50/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95">
-      <div className="flex items-start justify-between gap-3">
+    <div className="shrink-0 border-b border-zinc-200 pb-1.5 dark:border-zinc-800">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+          <p className="truncate text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
             Inn {inningsNumber} · {batName}
           </p>
-          <p className="mt-0.5 truncate text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="truncate text-xs text-zinc-600 dark:text-zinc-400">
             {live.awaitingNextPairSelection
               ? "Pick next pair"
               : live.awaitingBowlerSelection
@@ -130,18 +132,18 @@ function CompactHeader({
           {!live.awaitingNextPairSelection &&
             live.currentPairNumber <= 5 &&
             p1 !== "—" && (
-              <p className="mt-1 text-xs tabular-nums text-zinc-500">
+              <p className="text-[10px] tabular-nums text-zinc-500">
                 {live.currentPairRuns}r · {oversFormat(live.pairBlockLegalBalls)}/
                 {OVERS_PER_PAIR_BLOCK}ov
               </p>
             )}
         </div>
         <div className="shrink-0 text-right">
-          <div className="flex items-baseline justify-end gap-2">
-            <p className="text-lg font-bold tabular-nums text-zinc-500">
+          <div className="flex items-baseline justify-end gap-1.5">
+            <p className="text-sm font-bold tabular-nums text-zinc-500">
               {oversFormat(live.legalBalls)}
             </p>
-            <p className="text-3xl font-black tabular-nums leading-none">
+            <p className="text-2xl font-black tabular-nums leading-none">
               {live.runs}
             </p>
           </div>
@@ -153,13 +155,8 @@ function CompactHeader({
         onSelect={onEditBall}
       />
       {inningsNumber === 2 && firstInningsRuns !== null && (
-        <p className="mt-2 text-center text-xs font-semibold text-amber-800 dark:text-amber-300">
+        <p className="mt-1 text-center text-[10px] font-semibold text-amber-800 dark:text-amber-300">
           Need {firstInningsRuns + 1} to win
-        </p>
-      )}
-      {live.awaitingBowlerSelection && !live.awaitingNextPairSelection && (
-        <p className="mt-2 rounded-lg bg-amber-100 px-2 py-1 text-center text-xs font-bold text-amber-950 dark:bg-amber-900/40 dark:text-amber-100">
-          Over done — choose next bowler
         </p>
       )}
     </div>
@@ -170,7 +167,7 @@ function Timeline({ live }: { live: LiveInnings }) {
   const tail = live.events.slice(-TIMELINE_VISIBLE).reverse();
   if (tail.length === 0) return null;
   return (
-    <ul className="max-h-36 space-y-1 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-2 text-xs dark:border-zinc-800 dark:bg-zinc-900">
+    <ul className="max-h-24 space-y-0.5 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-1.5 text-[10px] dark:border-zinc-800 dark:bg-zinc-900">
       {tail.map((e) => (
         <li key={e.id} className="flex justify-between gap-2 text-zinc-700 dark:text-zinc-300">
           <span>{timelineCompactLabel(e)}</span>
@@ -292,31 +289,15 @@ export function LiveScoring() {
     : "/scoreboard";
 
   return (
-    <div className="space-y-3 pb-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden">
       {scoringLocked ? (
-        <div className="rounded-xl border border-amber-400/50 bg-amber-50 px-3 py-3 text-sm text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
-          <p className="font-bold">View only</p>
-          <p className="mt-1 text-xs leading-relaxed opacity-90">
-            Another device is scoring this match. Open the live scoreboard on
-            other screens, or score here after they stop (about 90 seconds
-            without updates).
-          </p>
-          <Link
-            href={boardHref}
-            className="mt-2 inline-block text-xs font-bold text-emerald-700 underline dark:text-emerald-300"
-          >
-            Open live scoreboard
-          </Link>
-        </div>
-      ) : (
-        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-center text-xs text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
-          You are scoring — share the{" "}
+        <p className="shrink-0 rounded-md bg-amber-50 px-2 py-1 text-[10px] text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
+          View only —{" "}
           <Link href={boardHref} className="font-bold underline">
-            live scoreboard link
-          </Link>{" "}
-          for other devices.
+            live board
+          </Link>
         </p>
-      )}
+      ) : null}
 
       <BowlerSelectModal
         open={
@@ -387,18 +368,18 @@ export function LiveScoring() {
         onEditBall={setEditBall}
       />
 
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid shrink-0 grid-cols-2 gap-1">
         <button
           type="button"
           disabled={!canDeliver}
           onClick={() => swapStrikerManually()}
-          className="min-h-11 rounded-xl border border-emerald-500 text-sm font-bold text-emerald-800 disabled:opacity-40 dark:text-emerald-300"
+          className={`${actionBtn} border-emerald-500 font-bold text-emerald-800 dark:text-emerald-300`}
         >
           Swap ends
         </button>
         <select
           aria-label="Bowler"
-          className="min-h-11 rounded-xl border border-zinc-300 bg-white px-2 text-sm font-semibold dark:border-zinc-600 dark:bg-zinc-800"
+          className={`${actionBtn} bg-white px-1.5 font-semibold dark:bg-zinc-800`}
           value={bowlerValue}
           disabled={bowlerSelectLocked || scoringLocked}
           onChange={(e) =>
@@ -413,11 +394,8 @@ export function LiveScoring() {
         </select>
       </div>
 
-      <section aria-label="Runs">
-        <h2 className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-zinc-500">
-          Runs
-        </h2>
-        <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
+      <section aria-label="Runs" className="shrink-0">
+        <div className="grid grid-cols-6 gap-1">
           {RUNS_PAD.map((n) => (
             <button
               key={n}
@@ -432,12 +410,12 @@ export function LiveScoring() {
         </div>
       </section>
 
-      <section aria-label="Extra runs">
-        <div className="mb-1.5 flex gap-1.5">
+      <section aria-label="Extra runs" className="shrink-0">
+        <div className="mb-1 grid grid-cols-2 gap-1">
           <button
             type="button"
             onClick={() => setExtraType("wide")}
-            className={`min-h-10 flex-1 rounded-xl text-sm font-bold ${
+            className={`h-7 rounded-lg text-xs font-bold ${
               extraType === "wide"
                 ? "bg-violet-600 text-white"
                 : "border border-zinc-300 dark:border-zinc-600"
@@ -448,7 +426,7 @@ export function LiveScoring() {
           <button
             type="button"
             onClick={() => setExtraType("no_ball")}
-            className={`min-h-10 flex-1 rounded-xl text-sm font-bold ${
+            className={`h-7 rounded-lg text-xs font-bold ${
               extraType === "no_ball"
                 ? "bg-orange-600 text-white"
                 : "border border-zinc-300 dark:border-zinc-600"
@@ -457,7 +435,7 @@ export function LiveScoring() {
             No ball
           </button>
         </div>
-        <div className="grid grid-cols-5 gap-1.5">
+        <div className="grid grid-cols-5 gap-1">
           {EXTRA_RUNS_PAD.map((n) => (
             <button
               key={n}
@@ -467,28 +445,22 @@ export function LiveScoring() {
               className={
                 extraType === "wide"
                   ? extraBtn
-                  : `${padBtn} border-2 border-orange-400 bg-orange-50 text-orange-950 dark:border-orange-700 dark:bg-orange-950/60 dark:text-orange-100`
+                  : `${padBtn} border border-orange-400 bg-orange-50 text-orange-950 dark:border-orange-700 dark:bg-orange-950/60 dark:text-orange-100`
               }
             >
               {n}
             </button>
           ))}
         </div>
-        <p className="mt-1 text-center text-[10px] text-zinc-500">
-          Total runs on this extra (incl. 1 for {extraType === "wide" ? "wide" : "no ball"})
-        </p>
       </section>
 
-      <section aria-label="Out">
-        <h2 className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-zinc-500">
-          Out
-        </h2>
-        <div className="grid grid-cols-4 gap-1.5">
+      <section aria-label="Out" className="shrink-0">
+        <div className="grid grid-cols-5 gap-1">
           <button
             type="button"
             disabled={!canLegalDelivery}
             onClick={() => tapInstantOut("bowled")}
-            className={`${outBtn} text-xs`}
+            className={outBtn}
           >
             Bowled
           </button>
@@ -496,7 +468,7 @@ export function LiveScoring() {
             type="button"
             disabled={!canLegalDelivery}
             onClick={() => setQuickOutMode("caught")}
-            className={`${outBtn} text-xs`}
+            className={outBtn}
           >
             Caught
           </button>
@@ -504,7 +476,7 @@ export function LiveScoring() {
             type="button"
             disabled={!canDeliver}
             onClick={() => setQuickOutMode("run_out")}
-            className={`${outBtn} text-xs`}
+            className={outBtn}
           >
             Run out
           </button>
@@ -512,27 +484,27 @@ export function LiveScoring() {
             type="button"
             disabled={!canLegalDelivery}
             onClick={() => tapInstantOut("stumped")}
-            className={`${outBtn} text-xs`}
+            className={outBtn}
           >
             Stumped
           </button>
+          <button
+            type="button"
+            disabled={!canDeliver}
+            onClick={() => setQuickOutMode("extra_wicket")}
+            className={outBtn}
+          >
+            W/N out
+          </button>
         </div>
-        <button
-          type="button"
-          disabled={!canDeliver}
-          onClick={() => setQuickOutMode("extra_wicket")}
-          className={`${outBtn} mt-1.5 w-full`}
-        >
-          Wide / No ball out
-        </button>
       </section>
 
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="mt-auto grid shrink-0 grid-cols-2 gap-1">
         <button
           type="button"
           onClick={() => undo()}
           disabled={undoStack.length === 0}
-          className="min-h-11 rounded-xl border border-zinc-300 text-sm font-semibold disabled:opacity-40 dark:border-zinc-600"
+          className={actionBtn}
         >
           Undo
         </button>
@@ -540,7 +512,7 @@ export function LiveScoring() {
           type="button"
           disabled={!canLegalDelivery}
           onClick={() => scoreEndOver()}
-          className="min-h-11 rounded-xl border border-zinc-300 text-sm font-semibold disabled:opacity-40 dark:border-zinc-600"
+          className={actionBtn}
         >
           End over
         </button>
@@ -548,24 +520,22 @@ export function LiveScoring() {
 
       <button
         type="button"
-        onClick={() => endInningsManually()}
-        className="min-h-10 w-full rounded-xl text-xs font-semibold text-zinc-500 underline"
-      >
-        End innings now
-      </button>
-
-      <Timeline live={live} />
-
-      <button
-        type="button"
         onClick={() => setShowMore((v) => !v)}
-        className="w-full text-center text-xs font-semibold text-zinc-500"
+        className="shrink-0 text-center text-[10px] font-semibold text-zinc-500"
       >
-        {showMore ? "Hide details" : "More details"}
+        {showMore ? "Hide details" : "More"}
       </button>
 
       {showMore && (
-        <div className="space-y-3 text-sm">
+        <div className="shrink-0 space-y-1.5 overflow-y-auto text-xs">
+          <button
+            type="button"
+            onClick={() => endInningsManually()}
+            className="w-full rounded-lg border border-zinc-300 py-1 text-[10px] font-semibold text-zinc-600 dark:border-zinc-600"
+          >
+            End innings now
+          </button>
+          <Timeline live={live} />
           {(() => {
             const lastWicket = [...live.events]
               .reverse()

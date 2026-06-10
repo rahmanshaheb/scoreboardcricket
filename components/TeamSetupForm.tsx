@@ -1,10 +1,96 @@
 "use client";
 
-import { PLAYERS_PER_TEAM } from "@/lib/constants";
 import { useMatchStore } from "@/lib/store";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+
+const inputSm =
+  "rounded-md border border-zinc-300 bg-white px-1.5 text-xs dark:border-zinc-600 dark:bg-zinc-900";
+const btnSm =
+  "rounded-md px-2 py-1 text-[10px] font-semibold active:scale-[0.99]";
+
+function TeamBlock({
+  label,
+  teamName,
+  onTeamNameChange,
+  players,
+  onPlayerName,
+}: {
+  label: string;
+  teamName: string;
+  onTeamNameChange: (name: string) => void;
+  players: { id: string; name: string }[];
+  onPlayerName: (index: number, name: string) => void;
+}) {
+  return (
+    <section className="min-w-0 rounded-lg border border-zinc-200 bg-white p-1.5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-1 flex items-center gap-1">
+        <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-zinc-500">
+          {label}
+        </span>
+        <input
+          className={`${inputSm} h-7 min-w-0 flex-1 font-semibold`}
+          value={teamName}
+          onChange={(e) => onTeamNameChange(e.target.value)}
+          placeholder="Team name"
+          autoComplete="off"
+        />
+      </div>
+      <div className="grid grid-cols-5 gap-0.5">
+        {players.map((p, i) => (
+          <input
+            key={p.id}
+            className={`${inputSm} h-7`}
+            placeholder={`${i + 1}`}
+            value={p.name}
+            onChange={(e) => onPlayerName(i, e.target.value)}
+            autoComplete="off"
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RadioGroup({
+  legend,
+  name,
+  value,
+  onChange,
+  labels,
+}: {
+  legend: string;
+  name: string;
+  value: "a" | "b";
+  onChange: (side: "a" | "b") => void;
+  labels: { a: string; b: string };
+}) {
+  return (
+    <fieldset className="min-w-0 rounded-lg border border-zinc-200 px-1.5 py-1 dark:border-zinc-800">
+      <legend className="text-[9px] font-bold uppercase tracking-wide text-zinc-500">
+        {legend}
+      </legend>
+      <div className="mt-0.5 flex gap-2">
+        {(["a", "b"] as const).map((s) => (
+          <label
+            key={s}
+            className="flex min-w-0 flex-1 items-center gap-1 text-[10px] leading-tight"
+          >
+            <input
+              type="radio"
+              name={name}
+              checked={value === s}
+              onChange={() => onChange(s)}
+              className="h-3 w-3 shrink-0"
+            />
+            <span className="truncate">{labels[s]}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
 
 export function TeamSetupForm() {
   const router = useRouter();
@@ -21,152 +107,82 @@ export function TeamSetupForm() {
     if (!err) router.push("/setup/pairs");
   };
 
-  return (
-    <div className="space-y-6">
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Enter exactly ten players per team. You can assign pairs on the next step.
-      </p>
+  const teamALabel = setup.teamAName.trim() || "Team A";
+  const teamBLabel = setup.teamBName.trim() || "Team B";
 
-      <div className="flex flex-wrap gap-2">
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-1.5">
+      <div className="flex shrink-0 items-center justify-between gap-1">
         <button
           type="button"
           onClick={() => {
             loadSampleMatch();
             router.push("/setup/pairs");
           }}
-          className="rounded-xl border border-dashed border-emerald-400 px-3 py-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300"
+          className={`${btnSm} border border-dashed border-emerald-400 text-emerald-800 dark:text-emerald-300`}
         >
-          Fill sample data
+          Sample
         </button>
         <Link
           href="/"
-          className="rounded-xl border border-zinc-300 px-3 py-2 text-xs font-semibold text-zinc-600 dark:border-zinc-600 dark:text-zinc-400"
+          className={`${btnSm} border border-zinc-300 text-zinc-600 dark:border-zinc-600 dark:text-zinc-400`}
         >
-          Back home
+          Home
         </Link>
       </div>
 
-      <label className="block">
-        <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          Team A name
-        </span>
-        <input
-          className="mt-1 w-full rounded-xl border border-zinc-300 bg-white px-3 py-3 text-base dark:border-zinc-600 dark:bg-zinc-900"
-          value={setup.teamAName}
-          onChange={(e) => updateSetup({ teamAName: e.target.value })}
-          placeholder="e.g. North XI"
-          autoComplete="off"
+      <div className="grid shrink-0 grid-cols-2 gap-1.5">
+        <TeamBlock
+          label="A"
+          teamName={setup.teamAName}
+          onTeamNameChange={(teamAName) => updateSetup({ teamAName })}
+          players={setup.playersA}
+          onPlayerName={(i, name) => setPlayerName("a", i, name)}
         />
-      </label>
-
-      <label className="block">
-        <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          Team B name
-        </span>
-        <input
-          className="mt-1 w-full rounded-xl border border-zinc-300 bg-white px-3 py-3 text-base dark:border-zinc-600 dark:bg-zinc-900"
-          value={setup.teamBName}
-          onChange={(e) => updateSetup({ teamBName: e.target.value })}
-          placeholder="e.g. South XI"
-          autoComplete="off"
+        <TeamBlock
+          label="B"
+          teamName={setup.teamBName}
+          onTeamNameChange={(teamBName) => updateSetup({ teamBName })}
+          players={setup.playersB}
+          onPlayerName={(i, name) => setPlayerName("b", i, name)}
         />
-      </label>
+      </div>
 
-      <fieldset className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-        <legend className="px-1 text-xs font-semibold uppercase text-zinc-500">
-          Toss won by
-        </legend>
-        <div className="mt-2 flex gap-3">
-          {(["a", "b"] as const).map((s) => (
-            <label key={s} className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="toss"
-                checked={setup.tossWinner === s}
-                onChange={() => updateSetup({ tossWinner: s })}
-              />
-              {s === "a"
-                ? setup.teamAName.trim() || "Team A"
-                : setup.teamBName.trim() || "Team B"}
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      <fieldset className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-        <legend className="px-1 text-xs font-semibold uppercase text-zinc-500">
-          Bat first
-        </legend>
-        <div className="mt-2 flex gap-3">
-          {(["a", "b"] as const).map((s) => (
-            <label key={s} className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="bat"
-                checked={setup.batFirst === s}
-                onChange={() => updateSetup({ batFirst: s })}
-              />
-              {s === "a"
-                ? setup.teamAName.trim() || "Team A"
-                : setup.teamBName.trim() || "Team B"}
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      <label className="block">
-        <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          Overs per innings
-        </span>
-        <input
-          type="number"
-          min={1}
-          max={120}
-          inputMode="numeric"
-          className="mt-1 w-full rounded-xl border border-zinc-300 bg-white px-3 py-3 text-base dark:border-zinc-600 dark:bg-zinc-900"
-          value={setup.maxOvers}
-          onChange={(e) =>
-            updateSetup({ maxOvers: Number(e.target.value) || 1 })
-          }
+      <div className="grid shrink-0 grid-cols-3 gap-1">
+        <RadioGroup
+          legend="Toss"
+          name="toss"
+          value={setup.tossWinner}
+          onChange={(tossWinner) => updateSetup({ tossWinner })}
+          labels={{ a: teamALabel, b: teamBLabel }}
         />
-      </label>
-
-      <section>
-        <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
-          Team A players ({PLAYERS_PER_TEAM})
-        </h2>
-        <div className="grid gap-2">
-          {setup.playersA.map((p, i) => (
-            <input
-              key={p.id}
-              className="rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-base dark:border-zinc-600 dark:bg-zinc-900"
-              placeholder={`Player ${i + 1}`}
-              value={p.name}
-              onChange={(e) => setPlayerName("a", i, e.target.value)}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
-          Team B players ({PLAYERS_PER_TEAM})
-        </h2>
-        <div className="grid gap-2">
-          {setup.playersB.map((p, i) => (
-            <input
-              key={p.id}
-              className="rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-base dark:border-zinc-600 dark:bg-zinc-900"
-              placeholder={`Player ${i + 1}`}
-              value={p.name}
-              onChange={(e) => setPlayerName("b", i, e.target.value)}
-            />
-          ))}
-        </div>
-      </section>
+        <RadioGroup
+          legend="Bat first"
+          name="bat"
+          value={setup.batFirst}
+          onChange={(batFirst) => updateSetup({ batFirst })}
+          labels={{ a: teamALabel, b: teamBLabel }}
+        />
+        <label className="flex min-w-0 flex-col rounded-lg border border-zinc-200 px-1.5 py-1 dark:border-zinc-800">
+          <span className="text-[9px] font-bold uppercase tracking-wide text-zinc-500">
+            Overs
+          </span>
+          <input
+            type="number"
+            min={1}
+            max={120}
+            inputMode="numeric"
+            className={`${inputSm} mt-0.5 h-7 w-full`}
+            value={setup.maxOvers}
+            onChange={(e) =>
+              updateSetup({ maxOvers: Number(e.target.value) || 1 })
+            }
+          />
+        </label>
+      </div>
 
       {error && (
-        <p className="rounded-lg bg-red-100 px-3 py-2 text-sm text-red-900 dark:bg-red-950/50 dark:text-red-200">
+        <p className="shrink-0 rounded-md bg-red-100 px-2 py-1 text-[10px] text-red-900 dark:bg-red-950/50 dark:text-red-200">
           {error}
         </p>
       )}
@@ -174,7 +190,7 @@ export function TeamSetupForm() {
       <button
         type="button"
         onClick={onContinue}
-        className="h-14 w-full rounded-2xl bg-emerald-600 text-base font-bold text-white shadow-lg active:scale-[0.99]"
+        className="mt-auto h-10 shrink-0 rounded-xl bg-emerald-600 text-sm font-bold text-white shadow active:scale-[0.99]"
       >
         Continue to pairs
       </button>

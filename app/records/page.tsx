@@ -1,8 +1,7 @@
 import { AppShell } from "@/components/AppShell";
-import {
-  getPlayerLeaderboard,
-  listRecentMatches,
-} from "@/lib/db/queries";
+import { PlayerRecordsTable } from "@/components/PlayerRecordsTable";
+import { getAllPlayerStats } from "@/lib/db/aggregate-player-stats";
+import { listRecentMatches } from "@/lib/db/queries";
 import { oversFormat } from "@/lib/scoring";
 import Link from "next/link";
 
@@ -10,13 +9,13 @@ export const dynamic = "force-dynamic";
 
 export default async function RecordsPage() {
   let matches: Awaited<ReturnType<typeof listRecentMatches>> = [];
-  let players: Awaited<ReturnType<typeof getPlayerLeaderboard>> = [];
+  let players: Awaited<ReturnType<typeof getAllPlayerStats>> = [];
   let error: string | null = null;
 
   try {
     [matches, players] = await Promise.all([
       listRecentMatches(40),
-      getPlayerLeaderboard(60),
+      getAllPlayerStats(),
     ]);
   } catch (e) {
     console.error(e);
@@ -28,8 +27,8 @@ export default async function RecordsPage() {
     <AppShell title="Records">
       <div className="space-y-8">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Local SQLite history: finished matches and partnership-based player
-          totals (each pair row counts toward both batters).
+          Career totals from saved matches — batting (pair runs), bowling
+          (overs, wickets, runs), and fielding (catches, run outs, stumpings).
         </p>
 
         {error && (
@@ -38,35 +37,7 @@ export default async function RecordsPage() {
           </div>
         )}
 
-        <section>
-          <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-zinc-500">
-            Player records
-          </h2>
-          {players.length === 0 && !error ? (
-            <p className="text-sm text-zinc-500">No saved matches yet.</p>
-          ) : (
-            <ul className="space-y-2 rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-              {players.map((p, i) => (
-                <li
-                  key={p.nameKey}
-                  className="flex flex-wrap items-baseline justify-between gap-2 border-b border-zinc-100 px-3 py-2.5 last:border-0 dark:border-zinc-800"
-                >
-                  <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                    <span className="mr-2 tabular-nums text-zinc-400">
-                      {i + 1}.
-                    </span>
-                    {p.displayName}
-                  </span>
-                  <span className="tabular-nums text-sm text-zinc-600 dark:text-zinc-400">
-                    {p.partnershipRuns} partnership runs · {p.partnershipWickets}{" "}
-                    w (pairs) · {p.matchesPlayed} match
-                    {p.matchesPlayed === 1 ? "" : "es"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        {!error && <PlayerRecordsTable players={players} />}
 
         <section>
           <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-zinc-500">
@@ -98,7 +69,8 @@ export default async function RecordsPage() {
                   <ul className="mt-3 space-y-1 text-sm text-zinc-600 dark:text-zinc-300">
                     {m.innings.map((inn) => (
                       <li key={inn.id} className="tabular-nums">
-                        Inns {inn.inningsNumber} ({inn.battingSide === "a" ? m.teamAName : m.teamBName}
+                        Inns {inn.inningsNumber} (
+                        {inn.battingSide === "a" ? m.teamAName : m.teamBName}
                         ): {inn.runs}/{inn.wicketEvents} —{" "}
                         {oversFormat(inn.legalBalls)} ov · penalties{" "}
                         {inn.wicketPenaltyRuns} runs
